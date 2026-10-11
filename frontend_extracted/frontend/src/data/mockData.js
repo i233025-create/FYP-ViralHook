@@ -53,6 +53,12 @@ export const MOCK_EXPERIENCED_CREATOR_PROFILE = (handle, niche) => ({
     recurring_topics: ['Personal growth & self-comparison', 'Mortality & living fully', 'Daily life frustrations', 'Consistency & process', 'Motivational advice'],
     content_style_summary: 'The creator blends motivational messaging with quick, punchy hooks that challenge conventional thinking. They use a mix of inspirational and sarcastic tones, delivering content in a fast-paced format that keeps viewers engaged. Their videos often start with a provocative hook, followed by a concise explanation or solution, and end with a relatable takeaway. The voice is candid, direct, and occasionally humorous, making complex ideas accessible and memorable.',
     visual_style_suggestions: ['Fast cuts and quick transitions to match the fast pacing', 'On-screen text overlays highlighting key phrases for emphasis', 'Bright, energetic color palette to reinforce inspirational tone', 'Meme or sarcastic graphics inserted during humor beats for added relatability'],
+    // Per-video breakdown from creator_profile_multimodal.json (Module 2 pipeline output)
+    per_video_profiles: [
+      { video_id: 'AQMZc7TkEWG3zC_CkmAC', hook_type: 'Bold Claim', visual_pacing: 'very fast-paced', shot_count: 17, talking_head_pct: 0.84, speech_rate_wpm: 141.5 },
+      { video_id: 'AQNc2gwPw_H8Gm63Wcyw', hook_type: 'Story', visual_pacing: 'fast-paced', shot_count: 8, talking_head_pct: 0.5, speech_rate_wpm: 102.8 },
+      { video_id: 'AQOqKZdjddfM0D5GYWZq', hook_type: 'Inspirational', visual_pacing: 'very fast-paced', shot_count: 12, talking_head_pct: 0.75, speech_rate_wpm: 138.4 },
+    ],
   },
 })
 
