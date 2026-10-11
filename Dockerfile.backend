@@ -12,7 +12,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -20,9 +20,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY module1_style_extraction/requirements.txt ./requirements.txt
 
 # Install Python dependencies
+# CPU-only torch wheels: the default Linux torch pulls ~2.5GB of CUDA libs,
+# which the multi-stage copy doubles — enough to exhaust CI runner disk.
+# torchvision is pinned to match torch 2.2.2, otherwise open-clip-torch
+# pulls the latest torchvision, which upgrades torch.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        -r requirements.txt \
+        torchvision==0.17.2 && \
+    pip install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
         open-clip-torch==2.24.0 \
         scenedetect[opencv]==0.6.4 \
         librosa==0.10.2 \
@@ -39,7 +47,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 

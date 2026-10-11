@@ -2,22 +2,24 @@ name: CD — ViralHook Docker Build & Push
 
 on:
   push:
-    branches: [main]          # CD only triggers on main
-  workflow_dispatch:          # allow manual trigger from GitHub UI
+    branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
   BACKEND_IMAGE: ghcr.io/i233025-create/fyp-viralhook/backend
   FRONTEND_IMAGE: ghcr.io/i233025-create/fyp-viralhook/frontend
 
+# Grant GITHUB_TOKEN write access to packages (needed for GHCR push)
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   # ── Build & push backend Docker image ─────────────────────────────────────
   build-backend:
     name: Build & Push Backend
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -47,16 +49,11 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   # ── Build & push frontend Docker image ────────────────────────────────────
   build-frontend:
     name: Build & Push Frontend
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -86,8 +83,6 @@ jobs:
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   # ── Deployment summary ─────────────────────────────────────────────────────
   deploy-summary:
@@ -97,13 +92,7 @@ jobs:
     steps:
       - name: Print deployment info
         run: |
-          echo "================================================"
           echo "ViralHook CD Pipeline Complete"
-          echo "================================================"
-          echo "Backend image:  ${{ env.BACKEND_IMAGE }}:latest"
-          echo "Frontend image: ${{ env.FRONTEND_IMAGE }}:latest"
-          echo "Commit SHA:     ${{ github.sha }}"
-          echo "Triggered by:   ${{ github.actor }}"
-          echo "================================================"
-          echo "To run locally:"
-          echo "  docker-compose pull && docker-compose up"
+          echo "Backend:  ${{ env.BACKEND_IMAGE }}:latest"
+          echo "Frontend: ${{ env.FRONTEND_IMAGE }}:latest"
+          echo "Commit:   ${{ github.sha }}"

@@ -44,7 +44,8 @@ jobs:
             "pytest>=8.0.0" \
             "flake8>=6.0.0,<8.0.0" \
             "pyflakes>=3.0.0" \
-            "pycodestyle>=2.10.0"
+            "pycodestyle>=2.10.0" \
+            "pillow>=10.0.0"
 
       - name: Lint with flake8
         run: |
