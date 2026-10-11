@@ -24,8 +24,12 @@ COPY module1_style_extraction/requirements.txt ./requirements.txt
 # which the multi-stage copy doubles — enough to exhaust CI runner disk.
 # torchvision is pinned to match torch 2.2.2, otherwise open-clip-torch
 # pulls the latest torchvision, which upgrades torch.
+# openai-whisper==20231117 is sdist-only and its setup.py imports
+# pkg_resources, which setuptools>=81 removed — constrain the build env.
 RUN pip install --no-cache-dir --upgrade pip && \
+    echo "setuptools<81" > /tmp/build-constraints.txt && \
     pip install --no-cache-dir \
+        --build-constraint /tmp/build-constraints.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         -r requirements.txt \
         torchvision==0.17.2 && \
