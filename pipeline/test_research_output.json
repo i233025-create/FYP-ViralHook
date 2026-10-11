@@ -1,0 +1,38 @@
+{
+  "research_output": {
+    "topic": "Kishori Jaya",
+    "trend_score": 0.5582,
+    "trend_signals": {
+      "velocity": 36633.92,
+      "engagement_rate": 0.0062
+    },
+    "niche": "Personal Development",
+    "supporting_evidence": [
+      {
+        "video_title": "#motivation #jayakishoribhajan #shortsfeed #quotes #helth",
+        "channel": "factosinha",
+        "views": 700059,
+        "published_hours_ago": 36.3
+      },
+      {
+        "video_title": "#motivation #Jayakishori​ #Success​​ #motivational",
+        "channel": "dilkash inspire ",
+        "views": 351640,
+        "published_hours_ago": 32.3
+      }
+    ],
+    "related_keywords": [
+      "self improvement tips",
+      "morning routine productivity",
+      "growth mindset",
+      "discipline habits",
+      "stoicism daily",
+      "consistency motivation",
+      "mindset shift"
+    ],
+    "cluster_size": 3,
+    "low_confidence": false,
+    "source": "youtube_data_api"
+  },
+  "research_error": null
+}

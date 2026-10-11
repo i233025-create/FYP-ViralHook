@@ -1,0 +1,812 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="4">
+  <sequence id="seq_7347C1BD">
+    <name>ViralHook_AI_Developers</name>
+    <duration>810</duration>
+    <rate>
+      <timebase>30</timebase>
+      <ntsc>FALSE</ntsc>
+    </rate>
+    <in>-1</in>
+    <out>-1</out>
+    <samplecharacteristics>
+      <rate>
+        <timebase>30</timebase>
+        <ntsc>FALSE</ntsc>
+      </rate>
+      <width>1080</width>
+      <height>1920</height>
+      <pixelaspectratio>square</pixelaspectratio>
+      <fielddominance>none</fielddominance>
+      <colordepth>32</colordepth>
+    </samplecharacteristics>
+    <media>
+      <video>
+        <format>
+          <samplecharacteristics>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <width>1080</width>
+            <height>1920</height>
+            <pixelaspectratio>square</pixelaspectratio>
+            <fielddominance>none</fielddominance>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="v1_clip_1_9EBD24">
+            <name>[V1] Talking-head footage, direct eye contact</name>
+            <duration>90</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>90</end>
+            <in>0</in>
+            <out>90</out>
+            <file id="file_v1_1_A03010">
+              <name>Scene1_Placeholder</name>
+              <duration>90</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>90</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.12</red>
+                      <green>0.12</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>89</start>
+            <end>91</end>
+            <alignment>center</alignment>
+            <cutPointFrame>90</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_2_6AC441">
+            <name>[V2] B-roll: news headlines montage</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>90</start>
+            <end>240</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_2_670FF5">
+              <name>Scene2_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.18</green>
+                      <blue>0.12</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>239</start>
+            <end>241</end>
+            <alignment>center</alignment>
+            <cutPointFrame>240</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_3_EC55B4">
+            <name>[V3] B-roll: developer coding with AI assistant</name>
+            <duration>210</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>240</start>
+            <end>450</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="file_v1_3_CFC5F3">
+              <name>Scene3_Placeholder</name>
+              <duration>210</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>210</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.2</red>
+                      <green>0.1</green>
+                      <blue>0.1</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>449</start>
+            <end>451</end>
+            <alignment>center</alignment>
+            <cutPointFrame>450</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_4_C0090B">
+            <name>[V4] Screen: GitHub Copilot stats graphic</name>
+            <duration>210</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>660</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="file_v1_4_80EBE4">
+              <name>Scene4_Placeholder</name>
+              <duration>210</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>210</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.15</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>659</start>
+            <end>661</end>
+            <alignment>center</alignment>
+            <cutPointFrame>660</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_5_05461B">
+            <name>[V5] Return to talking head — confident close</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>660</start>
+            <end>810</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_5_00E30B">
+              <name>Scene5_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.18</red>
+                      <green>0.12</green>
+                      <blue>0.18</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+        <track>
+          <clipitem id="v2_caption_1_BABA08">
+            <name>[CAP] AI WILL REPLACE DEVELOPERS?</name>
+            <duration>90</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>90</end>
+            <in>0</in>
+            <out>90</out>
+            <file id="file_v2_1_ECAFF7">
+              <name>Caption_1</name>
+              <duration>90</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>90</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>AI WILL REPLACE DEVELOPERS?</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_2_D1EC5D">
+            <name>[CAP] WRONG QUESTION</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>90</start>
+            <end>240</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_2_E8B9FA">
+              <name>Caption_2</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>WRONG QUESTION</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_3_42673B">
+            <name>[CAP] ONE-PERSON TEAM</name>
+            <duration>210</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>240</start>
+            <end>450</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="file_v2_3_74B1E2">
+              <name>Caption_3</name>
+              <duration>210</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>210</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>ONE-PERSON TEAM</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_4_517D8C">
+            <name>[CAP] 55% MORE OUTPUT</name>
+            <duration>210</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>660</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="file_v2_4_862487">
+              <name>Caption_4</name>
+              <duration>210</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>210</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>55% MORE OUTPUT</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_5_D027D8">
+            <name>[CAP] ARE YOU USING AI?</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>660</start>
+            <end>810</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_5_D15BA8">
+              <name>Caption_5</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>ARE YOU USING AI?</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <format>
+          <samplecharacteristics>
+            <depth>16</depth>
+            <samplerate>48000</samplerate>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="a1_vo_1_895957">
+            <name>[VO] AI won't replace developers. But developers who use AI will </name>
+            <duration>144000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>90</end>
+            <in>0</in>
+            <out>90</out>
+            <file id="afile_1_8540CE">
+              <name>VO_Scene1</name>
+              <pathurl/>
+              <duration>144000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_2_359C44">
+            <name>[VO] Everyone's debating whether AI takes our jobs. That's the wr</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>90</start>
+            <end>240</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_2_F11DB6">
+              <name>VO_Scene2</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_3_A68323">
+            <name>[VO] The real shift is this: AI agents are turning solo developer</name>
+            <duration>336000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>240</start>
+            <end>450</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="afile_3_A5ADAE">
+              <name>VO_Scene3</name>
+              <pathurl/>
+              <duration>336000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_4_ED31FD">
+            <name>[VO] GitHub Copilot users ship 55% more code. Cursor users report</name>
+            <duration>336000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>660</end>
+            <in>0</in>
+            <out>210</out>
+            <file id="afile_4_A05455">
+              <name>VO_Scene4</name>
+              <pathurl/>
+              <duration>336000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_5_A3F6BD">
+            <name>[VO] The question isn't will AI replace you. It's — are you using</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>660</start>
+            <end>810</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_5_FCC26B">
+              <name>VO_Scene5</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+    <marker>
+      <name>Scene 1</name>
+      <comment>Caption: AI WILL REPLACE DEVELOPERS?
+VO: AI won't replace developers. But developers who use AI will ...</comment>
+      <in>0</in>
+      <out>90</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 2</name>
+      <comment>Caption: WRONG QUESTION
+VO: Everyone's debating whether AI takes our jobs. That's the wr...</comment>
+      <in>90</in>
+      <out>240</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 3</name>
+      <comment>Caption: ONE-PERSON TEAM
+VO: The real shift is this: AI agents are turning solo developer...</comment>
+      <in>240</in>
+      <out>450</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 4</name>
+      <comment>Caption: 55% MORE OUTPUT
+VO: GitHub Copilot users ship 55% more code. Cursor users report...</comment>
+      <in>450</in>
+      <out>660</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 5</name>
+      <comment>Caption: ARE YOU USING AI?
+VO: The question isn't will AI replace you. It's — are you using...</comment>
+      <in>660</in>
+      <out>810</out>
+      <color>2</color>
+    </marker>
+  </sequence>
+</xmeml>

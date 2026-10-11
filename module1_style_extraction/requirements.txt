@@ -1,0 +1,37 @@
+# ─── Module 1: RAG-based Style & Niche Extraction ───────────────────────────
+# Pin exact versions for reproducibility in a university POC environment.
+# Install with: pip install -r requirements.txt
+#
+# SYSTEM DEPENDENCY REQUIRED:
+#   ffmpeg must be installed separately on your OS before running this project.
+#   - Windows: https://ffmpeg.org/download.html  (add ffmpeg/bin to PATH)
+
+# ─── Core AI / Transcription ─────────────────────────────────────────────────
+openai-whisper==20231117        # Local, open-source ASR model (runs on CPU)
+torch==2.2.2                    # Required by Whisper; CPU-only build is fine
+
+# ─── YouTube Audio Downloader ────────────────────────────────────────────────
+yt-dlp==2024.3.10               # Robust YouTube downloader, actively maintained
+
+# ─── LangChain Ecosystem ─────────────────────────────────────────────────────
+langchain==0.1.20               # Core LangChain framework (LCEL, chains, etc.)
+langchain-community==0.0.38     # Community integrations (ChromaDB wrapper, etc.)
+langchain-groq==0.1.3           # Groq LLM integration for LangChain
+langchain-huggingface==0.0.3    # HuggingFace embeddings integration
+
+# ─── Vector Store ────────────────────────────────────────────────────────────
+chromadb==0.4.24                # Local, persistent vector database (no server needed)
+
+# ─── Embeddings ──────────────────────────────────────────────────────────────
+sentence-transformers==2.7.0    # Provides all-MiniLM-L6-v2 embedding model (~90MB)
+
+# ─── Utilities ───────────────────────────────────────────────────────────────
+python-dotenv==1.0.1            # Loads .env file into environment variables
+rich==13.7.1                    # Beautiful terminal output (panels, progress bars, colors)
+requests==2.34.2                # HTTP client (used by research_agent YouTube API calls)
+scikit-learn==1.9.0             # TF-IDF vectoriser used in research_agent topic clustering
+
+# ─── API Server (server.py) ───────────────────────────────────────────────────
+fastapi==0.111.0                # FastAPI web framework
+uvicorn==0.29.0                 # ASGI server for FastAPI
+python-multipart==0.0.9         # Required for FastAPI file uploads

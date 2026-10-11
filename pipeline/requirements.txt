@@ -1,0 +1,22 @@
+# ─── Pipeline: Research Agent + LangGraph State ──────────────────────────────
+# Install with: pip install -r requirements.txt
+#
+# Note: These are ADDITIONAL dependencies on top of module1_style_extraction.
+# If running in the same venv, install both requirements files.
+
+# ─── LangGraph ────────────────────────────────────────────────────────────────
+langgraph==0.2.28               # LangGraph graph execution engine
+langchain-core==0.1.53          # Already installed from module1, listed for clarity
+
+# ─── Trend Research ───────────────────────────────────────────────────────────
+pytrends==4.9.2                 # Unofficial Google Trends API wrapper (no key needed)
+
+# ─── Data Processing ──────────────────────────────────────────────────────────
+pandas==2.2.2                   # Required by pytrends for response parsing
+scikit-learn==1.4.2             # TF-IDF for topic clustering (already in module1 venv)
+
+# ─── Pydantic v2 ──────────────────────────────────────────────────────────────
+pydantic==2.7.1                 # Typed state models — v2 required
+
+# ─── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1            # Already installed, listed for completeness

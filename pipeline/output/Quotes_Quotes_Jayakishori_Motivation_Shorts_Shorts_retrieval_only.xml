@@ -1,0 +1,812 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="4">
+  <sequence id="seq_079D7006">
+    <name>Quotes_Quotes_Jayakishori_Motivation_Shorts_Shorts_retrieval_only</name>
+    <duration>900</duration>
+    <rate>
+      <timebase>30</timebase>
+      <ntsc>FALSE</ntsc>
+    </rate>
+    <in>-1</in>
+    <out>-1</out>
+    <samplecharacteristics>
+      <rate>
+        <timebase>30</timebase>
+        <ntsc>FALSE</ntsc>
+      </rate>
+      <width>1080</width>
+      <height>1920</height>
+      <pixelaspectratio>square</pixelaspectratio>
+      <fielddominance>none</fielddominance>
+      <colordepth>32</colordepth>
+    </samplecharacteristics>
+    <media>
+      <video>
+        <format>
+          <samplecharacteristics>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <width>1080</width>
+            <height>1920</height>
+            <pixelaspectratio>square</pixelaspectratio>
+            <fielddominance>none</fielddominance>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="v1_clip_1_F549F7">
+            <name>[V1] A young professional in a fluorescent-lit office flips a thick book titled 'Succ</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>180</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v1_1_A661EE">
+              <name>Scene1_Placeholder</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.12</red>
+                      <green>0.12</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>179</start>
+            <end>181</end>
+            <alignment>center</alignment>
+            <cutPointFrame>180</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_2_740190">
+            <name>[V2] The same person juggling a stack of files, a phone, and a coffee mug, while scro</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>180</start>
+            <end>360</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v1_2_E16AA7">
+              <name>Scene2_Placeholder</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.18</green>
+                      <blue>0.12</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>359</start>
+            <end>361</end>
+            <alignment>center</alignment>
+            <cutPointFrame>360</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_3_3DC11F">
+            <name>[V3] Close‑up of a notebook being opened. The person writes a short note, then smiles</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>360</start>
+            <end>540</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v1_3_7B35F7">
+              <name>Scene3_Placeholder</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.2</red>
+                      <green>0.1</green>
+                      <blue>0.1</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>539</start>
+            <end>541</end>
+            <alignment>center</alignment>
+            <cutPointFrame>540</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_4_FC2FDB">
+            <name>[V4] The person ties shoes, makes coffee, and takes a deep breath before heading out </name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>540</start>
+            <end>720</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v1_4_E3D49B">
+              <name>Scene4_Placeholder</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.15</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>719</start>
+            <end>721</end>
+            <alignment>center</alignment>
+            <cutPointFrame>720</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_5_082F44">
+            <name>[V5] The person steps onto a city sidewalk at sunrise, turning away from a billboard </name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>720</start>
+            <end>900</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v1_5_BE9BB7">
+              <name>Scene5_Placeholder</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.18</red>
+                      <green>0.12</green>
+                      <blue>0.18</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+        <track>
+          <clipitem id="v2_caption_1_572EF5">
+            <name>[CAP] Success is a story</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>180</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v2_1_A6F5EC">
+              <name>Caption_1</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Success is a story</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_2_12BD90">
+            <name>[CAP] Wrong plot twists</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>180</start>
+            <end>360</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v2_2_5C53A7">
+              <name>Caption_2</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Wrong plot twists</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_3_3DA719">
+            <name>[CAP] Your daily script</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>360</start>
+            <end>540</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v2_3_98ACE9">
+              <name>Caption_3</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Your daily script</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_4_93BBF4">
+            <name>[CAP] Small scenes count</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>540</start>
+            <end>720</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v2_4_E372EC">
+              <name>Caption_4</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Small scenes count</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_5_CF3F87">
+            <name>[CAP] Write your own headline</name>
+            <duration>180</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>720</start>
+            <end>900</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="file_v2_5_624CE2">
+              <name>Caption_5</name>
+              <duration>180</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>180</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Write your own headline</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <format>
+          <samplecharacteristics>
+            <depth>16</depth>
+            <samplerate>48000</samplerate>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="a1_vo_1_66BB02">
+            <name>[VO] Success? It's just a story you pay to read.</name>
+            <duration>288000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>180</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="afile_1_F3F8A5">
+              <name>VO_Scene1</name>
+              <pathurl/>
+              <duration>288000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_2_1E3A3C">
+            <name>[VO] We chase promotions, raises, that perfect Insta‑feed. Wrong </name>
+            <duration>288000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>180</start>
+            <end>360</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="afile_2_6AE45A">
+              <name>VO_Scene2</name>
+              <pathurl/>
+              <duration>288000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_3_7C202A">
+            <name>[VO] Your real plot is the script you write every day.</name>
+            <duration>288000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>360</start>
+            <end>540</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="afile_3_88F2AF">
+              <name>VO_Scene3</name>
+              <pathurl/>
+              <duration>288000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_4_42E0E9">
+            <name>[VO] Start with tying shoes, making coffee. Small scenes, big sto</name>
+            <duration>288000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>540</start>
+            <end>720</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="afile_4_5FDD19">
+              <name>VO_Scene4</name>
+              <pathurl/>
+              <duration>288000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_5_68EB32">
+            <name>[VO] Quit chasing headlines. Write your own. That's the motivatio</name>
+            <duration>288000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>720</start>
+            <end>900</end>
+            <in>0</in>
+            <out>180</out>
+            <file id="afile_5_9E497D">
+              <name>VO_Scene5</name>
+              <pathurl/>
+              <duration>288000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+    <marker>
+      <name>Scene 1</name>
+      <comment>Caption: Success is a story
+VO: Success? It's just a story you pay to read....</comment>
+      <in>0</in>
+      <out>180</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 2</name>
+      <comment>Caption: Wrong plot twists
+VO: We chase promotions, raises, that perfect Insta‑feed. Wrong ...</comment>
+      <in>180</in>
+      <out>360</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 3</name>
+      <comment>Caption: Your daily script
+VO: Your real plot is the script you write every day....</comment>
+      <in>360</in>
+      <out>540</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 4</name>
+      <comment>Caption: Small scenes count
+VO: Start with tying shoes, making coffee. Small scenes, big sto...</comment>
+      <in>540</in>
+      <out>720</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 5</name>
+      <comment>Caption: Write your own headline
+VO: Quit chasing headlines. Write your own. That's the motivatio...</comment>
+      <in>720</in>
+      <out>900</out>
+      <color>2</color>
+    </marker>
+  </sequence>
+</xmeml>

@@ -1,0 +1,167 @@
+{
+  "topic": "Quotes_Quotes_Jayakishori_Motivation_Shorts_Shortsfee D_Viral_Video",
+  "style_params": {
+    "hook_type": "Contrarian",
+    "structure": "Hook → Explanation (sometimes Problem → Solution)",
+    "tone": "Conversational",
+    "pacing": "Fast-paced",
+    "target_audience": "Young adults and early‑career professionals seeking motivation, humor, and reflective life lessons"
+  },
+  "results": {
+    "no_history": {
+      "metadata": {
+        "mode": "no_history",
+        "llm_calls": 1,
+        "evaluator_scores": null,
+        "regen_triggered": false
+      },
+      "script": {
+        "script_id": 1,
+        "concept_name": "Jayakishori's Inner Spark",
+        "hook_type": "Contrarian",
+        "scenes": [
+          {
+            "timecode": "0:00-0:05",
+            "clip_idea": "A fast‑paced montage of a crowded city street, people rushing, neon billboards flashing, all in high contrast. The camera suddenly freezes on a single person looking tired.",
+            "caption": "Motivation ≠ Hustle?",
+            "voiceover": "Think motivation means endless hustle? Think again."
+          },
+          {
+            "timecode": "0:05-0:10",
+            "clip_idea": "Close‑up of a handwritten quote by Jayakishori appearing on a textured parchment background, with subtle soft light and a gentle wind effect.",
+            "caption": "Jayakishori's secret revealed.",
+            "voiceover": "Jayakishori says true motivation starts inside, not outside."
+          },
+          {
+            "timecode": "0:10-0:15",
+            "clip_idea": "A person sits at a desk, scrolling endlessly on a phone, surrounded by clutter. The screen shows endless notifications and a calendar full of deadlines.",
+            "caption": "Feeling stuck? You're not alone.",
+            "voiceover": "Most of us feel stuck, chasing success while losing ourselves."
+          },
+          {
+            "timecode": "0:15-0:20",
+            "clip_idea": "The same person opens a journal, takes a deep breath, and writes. The camera zooms into a single page with the words: \"Today I choose purpose.\"",
+            "caption": "One habit: daily reflection.",
+            "voiceover": "Just one habit—daily reflection—reignites your inner fire."
+          },
+          {
+            "timecode": "0:20-0:30",
+            "clip_idea": "A rapid montage of diverse people smiling, working, and sharing their quotes on social media. The screen ends with a vibrant call‑to‑action button that says \"Share Your Spark.\"",
+            "caption": "Share your spark.",
+            "voiceover": "Now share your spark. Let’s go viral with motivation."
+          }
+        ]
+      },
+      "error": null
+    },
+    "retrieval_only": {
+      "metadata": {
+        "mode": "retrieval_only",
+        "llm_calls": 1,
+        "evaluator_scores": null,
+        "regen_triggered": false
+      },
+      "script": {
+        "script_id": 1,
+        "concept_name": "Story vs Success",
+        "hook_type": "Contrarian",
+        "scenes": [
+          {
+            "timecode": "0:00-0:06",
+            "clip_idea": "A young professional in a fluorescent-lit office flips a thick book titled \"Success\". The cover changes to a blank page as they stare skeptically.",
+            "caption": "Success is a story",
+            "voiceover": "Success? It's just a story you pay to read."
+          },
+          {
+            "timecode": "0:06-0:12",
+            "clip_idea": "The same person juggling a stack of files, a phone, and a coffee mug, while scrolling through a social‑media feed of perfect lives.",
+            "caption": "Wrong plot twists",
+            "voiceover": "We chase promotions, raises, that perfect Insta‑feed. Wrong plot twist."
+          },
+          {
+            "timecode": "0:12-0:18",
+            "clip_idea": "Close‑up of a notebook being opened. The person writes a short note, then smiles and shares it with a coworker over lunch.",
+            "caption": "Your daily script",
+            "voiceover": "Your real plot is the script you write every day."
+          },
+          {
+            "timecode": "0:18-0:24",
+            "clip_idea": "The person ties shoes, makes coffee, and takes a deep breath before heading out the door, all in quick succession.",
+            "caption": "Small scenes count",
+            "voiceover": "Start with tying shoes, making coffee. Small scenes, big story."
+          },
+          {
+            "timecode": "0:24-0:30",
+            "clip_idea": "The person steps onto a city sidewalk at sunrise, turning away from a billboard that reads \"Success\" and walking toward a sunrise-lit horizon.",
+            "caption": "Write your own headline",
+            "voiceover": "Quit chasing headlines. Write your own. That's the motivation."
+          }
+        ]
+      },
+      "error": null
+    },
+    "full_pipeline": {
+      "metadata": {
+        "mode": "full_pipeline",
+        "llm_calls": 2,
+        "evaluator_scores": {
+          "style_match": 7,
+          "hook_strength": 8,
+          "structure_adherence": 8,
+          "overall": 7.67,
+          "feedback": "Elevate the humor by adding a punchy one-liner or playful exaggeration in the hook, and sprinkle quick jokes in the explanation segments to match the creator’s witty vibe. Tighten the pacing by cutting any lingering pauses—aim for a 3‑second rhythm per clip. Consider a more personal anecdote in the problem section to deepen relatability.",
+          "attempt": 1
+        },
+        "regen_triggered": false,
+        "all_scores": [
+          {
+            "style_match": 7,
+            "hook_strength": 8,
+            "structure_adherence": 8,
+            "overall": 7.67,
+            "feedback": "Elevate the humor by adding a punchy one-liner or playful exaggeration in the hook, and sprinkle quick jokes in the explanation segments to match the creator’s witty vibe. Tighten the pacing by cutting any lingering pauses—aim for a 3‑second rhythm per clip. Consider a more personal anecdote in the problem section to deepen relatability.",
+            "attempt": 1
+          }
+        ]
+      },
+      "script": {
+        "script_id": 1,
+        "concept_name": "Staying Still Wins",
+        "hook_type": "Contrarian",
+        "scenes": [
+          {
+            "timecode": "0:00-0:05",
+            "clip_idea": "Close‑up of a coffee mug with a bold handwritten quote, camera zooms out to reveal a tired office desk.",
+            "caption": "Everyone says chase success",
+            "voiceover": "Everyone says you gotta chase success, but what if staying still is the real hustle?"
+          },
+          {
+            "timecode": "0:05-0:11",
+            "clip_idea": "Young adult scrolling through social media, scrolling thumb flicks, face shows boredom.",
+            "caption": "Stuck in the same loop",
+            "voiceover": "You scroll, you compare, you feel stuck. That’s the problem."
+          },
+          {
+            "timecode": "0:11-0:17",
+            "clip_idea": "Hand writes in a journal, then looks up with a smile, camera cuts to a bright window view.",
+            "caption": "Write your own story",
+            "voiceover": "The solution? Write your own story. Start with a single line that screams YOU."
+          },
+          {
+            "timecode": "0:17-0:23",
+            "clip_idea": "Fast montage: finishing a task, brewing coffee, laughing with a coworker, high‑five, thumbs‑up.",
+            "caption": "Tiny wins stack",
+            "voiceover": "Tiny wins stack up. One email answered, one coffee brewed, one joke cracked. That’s progress."
+          },
+          {
+            "timecode": "0:23-0:30",
+            "clip_idea": "Person on a rooftop at sunrise, arms outstretched, city skyline in background.",
+            "caption": "Own your pace",
+            "voiceover": "So own your pace, not the race. If you’re still, you’re moving forward. Let’s get it."
+          }
+        ]
+      },
+      "error": null
+    }
+  }
+}

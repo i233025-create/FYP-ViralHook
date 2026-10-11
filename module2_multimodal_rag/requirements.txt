@@ -1,0 +1,28 @@
+# ─── Module 2: Multimodal RAG ────────────────────────────────────────────────
+# Extends Module 1 with visual + audio feature extraction.
+# Install: pip install -r requirements.txt
+#
+# SYSTEM DEPENDENCIES:
+#   ffmpeg must be on PATH (already required by module1)
+
+# ─── Visual Embeddings ────────────────────────────────────────────────────────
+open-clip-torch==2.24.0         # CLIP ViT-B/32 — image embeddings (512-dim)
+Pillow==10.3.0                  # Image loading for CLIP
+
+# ─── Scene / Shot Detection ───────────────────────────────────────────────────
+scenedetect[opencv]==0.6.4      # PySceneDetect — shot count, durations
+
+# ─── Audio Feature Extraction ────────────────────────────────────────────────
+librosa==0.10.2                 # Speech rate, energy, pause detection
+soundfile==0.12.1               # Audio file I/O backend for librosa
+
+# ─── Vector Database ──────────────────────────────────────────────────────────
+qdrant-client==1.9.1            # Qdrant in-memory, named vectors
+
+# ─── Reused from module1 (already installed in venv) ─────────────────────────
+# openai-whisper
+# torch
+# langchain, langchain-groq, langchain-community
+# sentence-transformers
+# python-dotenv
+# rich

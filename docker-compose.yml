@@ -1,0 +1,60 @@
+version: "3.9"
+
+# ── ViralHook — docker-compose.yml ────────────────────────────────────────────
+# Runs the full stack locally:
+#   backend  → FastAPI on port 8000
+#   frontend → nginx on port 5173 (proxies /api → backend)
+#
+# Usage:
+#   docker-compose up --build          # build and run
+#   docker-compose up                  # run with cached images
+#   docker-compose down                # stop and remove containers
+#
+# Or pull pre-built images from GHCR:
+#   docker-compose pull && docker-compose up
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: ghcr.io/i233025-create/fyp-viralhook/backend:latest
+    container_name: viralhook-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+    volumes:
+      # Mount input_videos so you can add videos without rebuilding
+      - ./module1_style_extraction/input_videos:/app/module1_style_extraction/input_videos
+      # Mount profile output so it persists between container restarts
+      - ./module1_style_extraction/creator_profile.json:/app/module1_style_extraction/creator_profile.json
+      - ./module2_multimodal_rag/qdrant_snapshot.json:/app/module2_multimodal_rag/qdrant_snapshot.json
+      - ./module1_style_extraction/chroma_db:/app/module1_style_extraction/chroma_db
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend_extracted/frontend
+      dockerfile: ../../Dockerfile.frontend
+    image: ghcr.io/i233025-create/fyp-viralhook/frontend:latest
+    container_name: viralhook-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    name: viralhook-network

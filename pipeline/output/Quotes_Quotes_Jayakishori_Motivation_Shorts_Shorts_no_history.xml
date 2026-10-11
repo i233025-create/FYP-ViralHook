@@ -1,0 +1,812 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="4">
+  <sequence id="seq_651E6602">
+    <name>Quotes_Quotes_Jayakishori_Motivation_Shorts_Shorts_no_history</name>
+    <duration>900</duration>
+    <rate>
+      <timebase>30</timebase>
+      <ntsc>FALSE</ntsc>
+    </rate>
+    <in>-1</in>
+    <out>-1</out>
+    <samplecharacteristics>
+      <rate>
+        <timebase>30</timebase>
+        <ntsc>FALSE</ntsc>
+      </rate>
+      <width>1080</width>
+      <height>1920</height>
+      <pixelaspectratio>square</pixelaspectratio>
+      <fielddominance>none</fielddominance>
+      <colordepth>32</colordepth>
+    </samplecharacteristics>
+    <media>
+      <video>
+        <format>
+          <samplecharacteristics>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <width>1080</width>
+            <height>1920</height>
+            <pixelaspectratio>square</pixelaspectratio>
+            <fielddominance>none</fielddominance>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="v1_clip_1_1C9A96">
+            <name>[V1] A fast‑paced montage of a crowded city street, people rushing, neon billboards f</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>150</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_1_542501">
+              <name>Scene1_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.12</red>
+                      <green>0.12</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>149</start>
+            <end>151</end>
+            <alignment>center</alignment>
+            <cutPointFrame>150</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_2_73CD20">
+            <name>[V2] Close‑up of a handwritten quote by Jayakishori appearing on a textured parchment</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>150</start>
+            <end>300</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_2_E2A0C4">
+              <name>Scene2_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.18</green>
+                      <blue>0.12</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>299</start>
+            <end>301</end>
+            <alignment>center</alignment>
+            <cutPointFrame>300</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_3_7F59FA">
+            <name>[V3] A person sits at a desk, scrolling endlessly on a phone, surrounded by clutter. </name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>300</start>
+            <end>450</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_3_C846D1">
+              <name>Scene3_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.2</red>
+                      <green>0.1</green>
+                      <blue>0.1</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>449</start>
+            <end>451</end>
+            <alignment>center</alignment>
+            <cutPointFrame>450</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_4_8AEE11">
+            <name>[V4] The same person opens a journal, takes a deep breath, and writes. The camera zoo</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>600</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v1_4_9F8BBA">
+              <name>Scene4_Placeholder</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.1</red>
+                      <green>0.15</green>
+                      <blue>0.2</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <transitionitem>
+            <start>599</start>
+            <end>601</end>
+            <alignment>center</alignment>
+            <cutPointFrame>600</cutPointFrame>
+            <effect>
+              <name>Cross Dissolve</name>
+              <effectid>dissolve</effectid>
+              <effecttype>transition</effecttype>
+              <mediatype>video</mediatype>
+            </effect>
+          </transitionitem>
+          <clipitem id="v1_clip_5_862CC8">
+            <name>[V5] A rapid montage of diverse people smiling, working, and sharing their quotes on </name>
+            <duration>300</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>600</start>
+            <end>900</end>
+            <in>0</in>
+            <out>300</out>
+            <file id="file_v1_5_B97C78">
+              <name>Scene5_Placeholder</name>
+              <duration>300</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>300</duration>
+                  <samplecharacteristics>
+                    <rate>
+                      <timebase>30</timebase>
+                      <ntsc>FALSE</ntsc>
+                    </rate>
+                    <width>1080</width>
+                    <height>1920</height>
+                  </samplecharacteristics>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Color Matte</name>
+                <effectid>colormatte</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>color</name>
+                  <parameterid>color</parameterid>
+                  <value>
+                    <color>
+                      <red>0.18</red>
+                      <green>0.12</green>
+                      <blue>0.18</blue>
+                      <alpha>1.0</alpha>
+                    </color>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+        <track>
+          <clipitem id="v2_caption_1_5A57B3">
+            <name>[CAP] Motivation ≠ Hustle?</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>150</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_1_05F2EE">
+              <name>Caption_1</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Motivation ≠ Hustle?</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_2_67AAA2">
+            <name>[CAP] Jayakishori's secret revealed.</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>150</start>
+            <end>300</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_2_AB1990">
+              <name>Caption_2</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Jayakishori's secret revealed.</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_3_02C703">
+            <name>[CAP] Feeling stuck? You're not alone.</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>300</start>
+            <end>450</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_3_701D5E">
+              <name>Caption_3</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Feeling stuck? You're not alone.</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_4_889A32">
+            <name>[CAP] One habit: daily reflection.</name>
+            <duration>150</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>600</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="file_v2_4_5B7317">
+              <name>Caption_4</name>
+              <duration>150</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>150</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>One habit: daily reflection.</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+          <clipitem id="v2_caption_5_41D5FF">
+            <name>[CAP] Share your spark.</name>
+            <duration>300</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>600</start>
+            <end>900</end>
+            <in>0</in>
+            <out>300</out>
+            <file id="file_v2_5_070B4B">
+              <name>Caption_5</name>
+              <duration>300</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <pathurl/>
+              <media>
+                <video>
+                  <duration>300</duration>
+                </video>
+              </media>
+            </file>
+            <filter>
+              <effect>
+                <name>Premiere Title</name>
+                <effectid>PremierTitle</effectid>
+                <effecttype>generator</effecttype>
+                <mediatype>video</mediatype>
+                <parameter>
+                  <name>Text</name>
+                  <parameterid>Text</parameterid>
+                  <value>Share your spark.</value>
+                </parameter>
+                <parameter>
+                  <name>Font Size</name>
+                  <parameterid>FontSize</parameterid>
+                  <value>80</value>
+                </parameter>
+                <parameter>
+                  <name>Origin</name>
+                  <parameterid>origin</parameterid>
+                  <value>
+                    <horiz>0</horiz>
+                    <vert>560</vert>
+                  </value>
+                </parameter>
+              </effect>
+            </filter>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <format>
+          <samplecharacteristics>
+            <depth>16</depth>
+            <samplerate>48000</samplerate>
+          </samplecharacteristics>
+        </format>
+        <track>
+          <clipitem id="a1_vo_1_899404">
+            <name>[VO] Think motivation means endless hustle? Think again.</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>0</start>
+            <end>150</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_1_EC83C1">
+              <name>VO_Scene1</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_2_7D5C3D">
+            <name>[VO] Jayakishori says true motivation starts inside, not outside.</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>150</start>
+            <end>300</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_2_93B4AF">
+              <name>VO_Scene2</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_3_9B4AA1">
+            <name>[VO] Most of us feel stuck, chasing success while losing ourselve</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>300</start>
+            <end>450</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_3_5A82C7">
+              <name>VO_Scene3</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_4_D3E266">
+            <name>[VO] Just one habit—daily reflection—reignites your inner fire.</name>
+            <duration>240000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>450</start>
+            <end>600</end>
+            <in>0</in>
+            <out>150</out>
+            <file id="afile_4_A93EBE">
+              <name>VO_Scene4</name>
+              <pathurl/>
+              <duration>240000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+          <clipitem id="a1_vo_5_A92E1A">
+            <name>[VO] Now share your spark. Let’s go viral with motivation.</name>
+            <duration>480000</duration>
+            <rate>
+              <timebase>30</timebase>
+              <ntsc>FALSE</ntsc>
+            </rate>
+            <start>600</start>
+            <end>900</end>
+            <in>0</in>
+            <out>300</out>
+            <file id="afile_5_DD6AAD">
+              <name>VO_Scene5</name>
+              <pathurl/>
+              <duration>480000</duration>
+              <rate>
+                <timebase>30</timebase>
+                <ntsc>FALSE</ntsc>
+              </rate>
+              <media>
+                <audio>
+                  <samplerate>48000</samplerate>
+                  <channelcount>2</channelcount>
+                </audio>
+              </media>
+            </file>
+            <channelcount>2</channelcount>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+    <marker>
+      <name>Scene 1</name>
+      <comment>Caption: Motivation ≠ Hustle?
+VO: Think motivation means endless hustle? Think again....</comment>
+      <in>0</in>
+      <out>150</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 2</name>
+      <comment>Caption: Jayakishori's secret revealed.
+VO: Jayakishori says true motivation starts inside, not outside....</comment>
+      <in>150</in>
+      <out>300</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 3</name>
+      <comment>Caption: Feeling stuck? You're not alone.
+VO: Most of us feel stuck, chasing success while losing ourselve...</comment>
+      <in>300</in>
+      <out>450</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 4</name>
+      <comment>Caption: One habit: daily reflection.
+VO: Just one habit—daily reflection—reignites your inner fire....</comment>
+      <in>450</in>
+      <out>600</out>
+      <color>2</color>
+    </marker>
+    <marker>
+      <name>Scene 5</name>
+      <comment>Caption: Share your spark.
+VO: Now share your spark. Let’s go viral with motivation....</comment>
+      <in>600</in>
+      <out>900</out>
+      <color>2</color>
+    </marker>
+  </sequence>
+</xmeml>
