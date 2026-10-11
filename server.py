@@ -33,7 +33,6 @@ load_dotenv(ROOT / "module1_style_extraction" / ".env")
 load_dotenv(ROOT / ".env")
 
 PROFILE_PATH = ROOT / "module1_style_extraction" / "creator_profile.json"
-MULTIMODAL_PROFILE_PATH = ROOT / "module2_multimodal_rag" / "creator_profile_multimodal.json"
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="ViralHook PoC API", version="0.1.0")
@@ -215,12 +214,6 @@ def get_creator_profile(handle: str = "", niche: str = ""):
 
     with open(PROFILE_PATH, "r", encoding="utf-8") as f:
         raw = json.load(f)
-
-    # Per-video breakdowns (hook, pacing, shots, speech rate) only exist in
-    # Module 2's multimodal profile — attach them for the dashboard cards
-    if "per_video_profiles" not in raw and MULTIMODAL_PROFILE_PATH.exists():
-        with open(MULTIMODAL_PROFILE_PATH, "r", encoding="utf-8") as f:
-            raw["per_video_profiles"] = json.load(f).get("per_video_profiles", [])
 
     profile = _raw_profile_to_frontend(raw, handle=handle, niche=niche)
     return {"profile": profile}

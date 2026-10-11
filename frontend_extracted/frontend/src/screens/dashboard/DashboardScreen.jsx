@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, TrendingUp, FileText, Clock, CheckCircle, Film, BarChart2, Users, Zap, Camera, User, Mic } from 'lucide-react'
+import { Plus, TrendingUp, FileText, Clock, CheckCircle, Film, BarChart2, Users } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { getContentHistory } from '../../services/api'
 import { Btn, Badge, Card, Page } from '../../components/ui'
@@ -21,8 +21,6 @@ export default function DashboardScreen() {
   }, [])
 
   if (!creatorProfile) return null
-
-  const videoProfiles = creatorProfile.rawProfile?.per_video_profiles ?? []
 
   const stats = [
     { label: 'Published', value: creatorProfile.published, icon: CheckCircle, color: 'text-discord-green' },
@@ -134,74 +132,8 @@ export default function DashboardScreen() {
             </div>
           </Card>
         </div>
-
-        {/* Per-video profiles (Module 2 multimodal analysis) */}
-        {videoProfiles.length > 0 && (
-          <div className="mt-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-discord-white font-semibold text-sm">Per-Video Analysis</h3>
-              <p className="text-discord-muted text-xs">{videoProfiles.length} videos · multimodal</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {videoProfiles.map((video, i) => (
-                <VideoProfileCard key={video.video_id || i} video={video} index={i} />
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </Page>
-  )
-}
-
-function VideoProfileCard({ video, index }) {
-  const talkingHead = typeof video.talking_head_pct === 'number'
-    ? Math.round(video.talking_head_pct * 100)
-    : null
-  const wpm = typeof video.speech_rate_wpm === 'number' ? Math.round(video.speech_rate_wpm) : null
-
-  return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded bg-discord-input flex items-center justify-center flex-shrink-0">
-            <Film size={13} className="text-discord-muted" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-discord-white text-sm font-medium">Video {index + 1}</p>
-            {video.video_id && (
-              <p className="text-discord-faint text-[10px] font-mono truncate" title={video.video_id}>{video.video_id}</p>
-            )}
-          </div>
-        </div>
-        {video.hook_type && <Badge color="purple">{video.hook_type}</Badge>}
-      </div>
-
-      <div className="space-y-2.5">
-        <VideoMetric icon={Zap} label="Pacing" value={video.visual_pacing} />
-        <VideoMetric icon={Camera} label="Shots" value={video.shot_count} />
-        <VideoMetric icon={Mic} label="Speech" value={wpm !== null ? `${wpm} wpm` : null} />
-        <div>
-          <VideoMetric icon={User} label="Talking head" value={talkingHead !== null ? `${talkingHead}%` : null} />
-          {talkingHead !== null && (
-            <div className="mt-1.5 h-1.5 rounded-full bg-discord-input overflow-hidden">
-              <div className="h-full rounded-full bg-discord-blurple" style={{ width: `${talkingHead}%` }} />
-            </div>
-          )}
-        </div>
-      </div>
-    </Card>
-  )
-}
-
-function VideoMetric({ icon: Icon, label, value }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5 text-discord-faint text-xs font-semibold uppercase tracking-wide">
-        <Icon size={11} /> {label}
-      </span>
-      <span className="text-discord-text text-xs text-right">{value ?? '—'}</span>
-    </div>
   )
 }
 
