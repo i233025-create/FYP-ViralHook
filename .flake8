@@ -12,16 +12,23 @@ exclude =
     module1_style_extraction/venv,
     frontend_extracted
 
-# Ignore rules that conflict with common Python patterns
+# Ignore rules that conflict with common Python patterns.
+# NOTE: flake8 >= 6 does not allow inline comments after option values,
+# so keep explanations on their own lines.
+#   E203  whitespace before ':'          (conflicts with black)
+#   E501  line too long                  (handled by max-line-length)
+#   W503  line break before binary operator
+#   E402  module level import not at top (we have sys.path inserts)
+#   F401  imported but unused            (sometimes needed for re-exports)
 extend-ignore =
-    E203,   # whitespace before ':'  (conflicts with black)
-    E501,   # line too long          (handled by max-line-length)
-    W503,   # line break before binary operator
-    E402,   # module level import not at top (we have sys.path inserts)
-    F401,   # imported but unused    (sometimes needed for re-exports)
+    E203,
+    E501,
+    W503,
+    E402,
+    F401
 
+# Test files can have longer lines and unused imports;
+# pipeline/state.py uses long TypedDict lines
 per-file-ignores =
-    # Test files can have longer lines and unused imports
     tests/*:E501,F401
-    # Pipeline state file uses TypedDict patterns
     pipeline/state.py:E501
