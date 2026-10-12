@@ -5,7 +5,7 @@ Endpoints:
 
   GET  /health
   GET  /onboarding/profile        → reads creator_profile.json → frontend profile shape
-  POST /research/trends           → LLM-based trend generation (3 distinct topics)
+  POST /research/trends           → Research Agent: trending topics from real YouTube Shorts
   POST /script/generate           → RAG scripting agent (3 modes)
   POST /export/xml                → Premiere Pro XML from production plan
 
@@ -219,127 +219,59 @@ def get_creator_profile(handle: str = "", niche: str = ""):
     return {"profile": profile}
 
 
-# ── Task 2: Research (LLM-based, no YouTube API) ──────────────────────────────
+# ── Task 2: Research (real YouTube Shorts data) ───────────────────────────────
+
+def _trend_to_frontend(trend: dict, index: int, niche: str) -> dict:
+    """Map a research_agent trend to the topic card shape the frontend renders."""
+    signals = [trend["data_summary"]] + [
+        f"\"{e['title'][:70]}\" — {e['channel']} · {e['views']:,} views "
+        f"({e['outlier']:.1f}× subs) · {e['url']}"
+        for e in trend["evidence"][:3]
+    ]
+    return {
+        "id": f"t{index + 1}",
+        "topic": trend["topic"],
+        "niche": niche,
+        # Both scores are measured (0-1), shown as /100 in the UI
+        "trendScore": round(trend["trend_score"] * 100),
+        "creatorFit": round(trend["creator_fit"] * 100),
+        "signals": signals,
+        "whyThis": trend["suggested_angle"] or trend["why_trending"] or trend["data_summary"],
+        "lowConfidence": trend["low_confidence"],
+        "evidence": trend["evidence"],
+    }
+
 
 @app.post("/research/trends")
 def research_trends(body: ResearchRequest):
     """
     POST /research/trends  { niche: string }
 
-    Generates 3 distinct trending topic suggestions using the Groq LLM directly.
-    No YouTube API — prompts the LLM 3 times with different angle constraints
-    so each topic comes from a genuinely different content angle.
+    Runs the Research Agent: real YouTube Shorts → outlier/velocity scoring →
+    MiniLM clustering → local-LLM labels. Scores come from measured data only.
 
-    Returns: { topics: [ { id, topic, niche, trendScore, creatorFit, signals, whyThis } ] }
+    Returns: { topics: [ { id, topic, niche, trendScore, creatorFit, signals,
+                           whyThis, lowConfidence, evidence } ], queries }
     """
+    from pipeline.agents.research_agent import run_research
+
+    creator_profile = {}
+    if PROFILE_PATH.exists():
+        with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+            creator_profile = json.load(f)
+
     try:
-        from langchain_groq import ChatGroq
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_core.output_parsers import JsonOutputParser
-        from datetime import datetime
-
-        api_key = os.getenv("GROQ_API_KEY", "")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="GROQ_API_KEY not set.")
-
-        llm = ChatGroq(api_key=api_key, model_name="openai/gpt-oss-20b",
-                       temperature=0.85, max_tokens=600)
-
-        # Load creator profile for personalised relevance scoring
-        creator_profile = {}
-        if PROFILE_PATH.exists():
-            with open(PROFILE_PATH, "r", encoding="utf-8") as f:
-                creator_profile = json.load(f)
-
-        creator_context = ""
-        if creator_profile:
-            hooks    = creator_profile.get("signature_hooks", [])
-            tone     = creator_profile.get("dominant_tone", "")
-            audience = creator_profile.get("target_audience", "")
-            creator_context = (
-                f"The creator's style: {tone} tone, hooks like {hooks[:2]}, "
-                f"audience: {audience}."
-            )
-
-        # 3 different angle prompts to guarantee variety
-        angle_prompts = [
-            # Angle 1 — currently viral / momentum
-            f"Focus on a topic with STRONG current momentum — something blowing up RIGHT NOW in short-form video. "
-            f"Think contrarian takes, surprising facts, or \"everyone is wrong about X\" angles.",
-
-            # Angle 2 — underserved / niche insight
-            f"Focus on an UNDERSERVED angle — a topic not many creators have covered yet in this niche. "
-            f"Think emerging trends, niche insights, or \"before everyone else\" opportunities.",
-
-            # Angle 3 — evergreen high-performer
-            f"Focus on an EVERGREEN high-performing topic that consistently gets engagement. "
-            f"Think timeless advice, skill-building, or \"should know this\" educational content.",
-        ]
-
-        prompt_template = ChatPromptTemplate.from_template(
-            """You are a viral content strategist for short-form video (Instagram Reels / YouTube Shorts).
-Today is {date}. Niche: "{niche}". {creator_context}
-
-{angle}
-
-Suggest ONE specific, compelling trending topic for a 30-second short-form video.
-The topic should be a specific, punchy title — NOT a generic category.
-Good example: "Why your morning routine is sabotaging your focus"
-Bad example: "Morning routines" or "Productivity tips"
-
-Output ONLY valid JSON (no markdown, no extra text):
-{{
-  "topic": "specific punchy topic title",
-  "trendScore": <integer 60-95>,
-  "creatorFit": <integer 60-95>,
-  "signals": ["signal 1", "signal 2", "signal 3"],
-  "whyThis": "one sentence explaining why this topic works for this creator right now"
-}}"""
-        )
-
-        chain = prompt_template | llm | JsonOutputParser()
-        date_str = datetime.now().strftime("%B %d, %Y")
-
-        topics = []
-        seen = set()
-
-        for i, angle in enumerate(angle_prompts):
-            try:
-                result = chain.invoke({
-                    "date": date_str,
-                    "niche": body.niche,
-                    "creator_context": creator_context,
-                    "angle": angle,
-                })
-
-                topic_name = result.get("topic", "").strip()
-                if not topic_name or topic_name in seen:
-                    continue
-                seen.add(topic_name)
-
-                topics.append({
-                    "id": f"t{len(topics)+1}",
-                    "topic": topic_name,
-                    "niche": body.niche,
-                    "trendScore": max(40, min(95, int(result.get("trendScore", 70)))),
-                    "creatorFit":  max(40, min(95, int(result.get("creatorFit",  70)))),
-                    "signals": result.get("signals", [f"LLM-identified trend in {body.niche} niche"]),
-                    "whyThis": result.get("whyThis", f"Strong opportunity in the {body.niche} niche right now."),
-                })
-            except Exception as e:
-                # One prompt failed — continue to next angle
-                print(f"[ResearchAgent] Angle {i+1} failed: {e}")
-                continue
-
-        if not topics:
-            raise HTTPException(status_code=500, detail="LLM trend generation failed for all angles.")
-
-        return {"topics": topics}
-
-    except HTTPException:
-        raise
+        result = run_research(creator_profile, body.niche)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Research failed: {e}")
+
+    if not result["trends"]:
+        raise HTTPException(status_code=503, detail=result["error"] or "No trends found.")
+
+    return {
+        "topics": [_trend_to_frontend(t, i, body.niche) for i, t in enumerate(result["trends"])],
+        "queries": result["queries"],
+    }
 
 
 # ── Script Generation ─────────────────────────────────────────────────────────

@@ -107,16 +107,22 @@ class PipelineState(TypedDict):
     # ── Research Agent outputs ─────────────────────────────────────────────────
     # Set by research_agent.py. None until that node runs.
     research_output: Optional[dict]
-    # Schema of research_output when successful:
+    # Schema of research_output (see agents/research_agent.py):
     # {
-    #   "topic": str,
-    #   "trend_score": float,
-    #   "trend_signals": {"velocity": float, "engagement_rate": float},
+    #   "topic": str,                      # top trend (read by ScriptingAgent)
+    #   "trend_score": float,              # 0-1, measured — never LLM-made
+    #   "trend_signals": {"velocity": float, "engagement_rate": float, "outlier": float},
+    #   "creator_fit": float,              # cosine vs recurring_topics
+    #   "why_trending": str, "suggested_angle": str,
     #   "niche": str,
     #   "supporting_evidence": [
-    #       {"keyword": str, "peak_interest": int, "timeframe": str}
+    #       {"video_title": str, "channel": str, "views": int,
+    #        "published_hours_ago": float, "url": str}
     #   ],
-    #   "related_keywords": [str]
+    #   "related_keywords": [str],         # search queries used
+    #   "cluster_size": int, "low_confidence": bool,
+    #   "source": "youtube_data_api" | "profile_fallback",
+    #   "trends": [ ...all ranked trends with full evidence... ]
     # }
     research_error: Optional[str]
 
