@@ -8,6 +8,9 @@ Endpoints:
   POST /research/trends           → Research Agent: trending topics from real YouTube Shorts
   POST /script/generate           → Scripting Agent: 3 hook variants, measured evaluator
   POST /export/xml                → Premiere Pro XML from production plan
+  POST /video/generate            → Video Agent: start a render job (returns job_id)
+  GET  /video/status/{job_id}     → job progress, timeline + evaluation when done
+  GET  /video/file/{job_id}       → the rendered MP4
 
 Run:
   module1_style_extraction\\venv\\Scripts\\python.exe -m uvicorn server:app --reload --port 8000
@@ -17,10 +20,14 @@ import os
 import sys
 import json
 import re
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -171,6 +178,10 @@ class ScriptRequest(BaseModel):
 
 class ExportXMLRequest(BaseModel):
     plan: dict
+
+class VideoRequest(BaseModel):
+    plan: dict                       # production plan { title, scenes[] } or a ScriptOutput
+    mode: str = "personalised"       # "personalised" | "generic" (baseline)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -353,3 +364,80 @@ def export_xml(body: ExportXMLRequest):
         raise HTTPException(status_code=500, detail=f"Pipeline import error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Video Generation ──────────────────────────────────────────────────────────
+# Renders take minutes and share one GPU, so jobs run one at a time on a
+# single worker thread and the frontend polls /video/status/{job_id}.
+
+_video_jobs: dict = {}
+_video_lock = threading.Lock()
+_video_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="video")
+
+
+def _update_job(job_id: str, **fields):
+    with _video_lock:
+        _video_jobs[job_id].update(fields)
+
+
+def _run_video_job(job_id: str, plan: dict, mode: str):
+    from pipeline.agents.video_agent import generate_video, load_profile
+    from pipeline.video.timeline import to_frontend
+
+    _update_job(job_id, status="running")
+    try:
+        result = generate_video(
+            plan, load_profile(), mode=mode, job_id=job_id,
+            title=plan.get("title", "ViralHook"),
+            on_step=lambda n, label, detail: _update_job(job_id, step=n, stepLabel=label, detail=detail),
+        )
+        _update_job(job_id, status="done", videoPath=result["video_path"],
+                    timeline=to_frontend(result["timeline"]), evaluation=result["evaluation"],
+                    seconds=result["seconds"])
+    except Exception as e:
+        _update_job(job_id, status="error", error=str(e))
+
+
+@app.post("/video/generate")
+def video_generate(body: VideoRequest):
+    """
+    POST /video/generate  { plan: { title, scenes[] }, mode? }
+
+    Starts the Video Agent (voiceover → shots → assets → FFmpeg render →
+    measured evaluation) in the background. Poll /video/status/{job_id}.
+    """
+    from pipeline.agents.video_agent import STEPS
+
+    if body.mode not in ("personalised", "generic"):
+        raise HTTPException(status_code=400, detail="mode must be 'personalised' or 'generic'")
+    if not body.plan.get("scenes"):
+        raise HTTPException(status_code=400, detail="No scenes in production plan.")
+
+    job_id = uuid.uuid4().hex[:12]
+    with _video_lock:
+        _video_jobs[job_id] = {"jobId": job_id, "status": "queued", "mode": body.mode,
+                               "step": 0, "stepLabel": "", "detail": "", "steps": STEPS}
+    _video_executor.submit(_run_video_job, job_id, body.plan, body.mode)
+    return {"jobId": job_id, "steps": STEPS}
+
+
+@app.get("/video/status/{job_id}")
+def video_status(job_id: str):
+    """Progress while running; timeline + evaluation + videoUrl once done."""
+    with _video_lock:
+        job = dict(_video_jobs.get(job_id) or {})
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown video job.")
+    job.pop("videoPath", None)
+    if job["status"] == "done":
+        job["videoUrl"] = f"/video/file/{job_id}"
+    return job
+
+
+@app.get("/video/file/{job_id}")
+def video_file(job_id: str):
+    with _video_lock:
+        path = (_video_jobs.get(job_id) or {}).get("videoPath")
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Video not ready.")
+    return FileResponse(path, media_type="video/mp4", filename=f"viralhook_{job_id}.mp4")

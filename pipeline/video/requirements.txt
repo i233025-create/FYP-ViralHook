@@ -1,0 +1,20 @@
+# ─── Module 4: Video Generation ──────────────────────────────────────────────
+# pip install -r pipeline/video/requirements.txt
+# Also needs: FFmpeg on PATH (with libass), and module2_multimodal_rag deps for evaluation.
+#
+# GPU (RTX 3080 tested): install torch from the CUDA index first, e.g.
+#   pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+# Kokoro needs transformers ≥ a version that matches torch; torch 2.8 + transformers 5.x works.
+
+kokoro>=0.9.4              # Kokoro-82M TTS (word timestamps); downloads en_core_web_sm on first run
+soundfile>=0.12            # write voiceover WAVs
+diffusers>=0.41            # SDXL-Lightning stills
+transformers>=5.0
+accelerate>=1.0            # enable_model_cpu_offload for SDXL on 10 GB
+safetensors>=0.4
+huggingface-hub>=1.3
+open-clip-torch>=2.24      # CLIP ViT-B/32 (asset ranking + evaluation)
+scenedetect[opencv]>=0.6   # evaluator: shot detection on the rendered MP4
+librosa>=0.10              # evaluator: speech rate
+requests>=2.28             # Pexels API
+pillow>=10.0               # placeholder cards

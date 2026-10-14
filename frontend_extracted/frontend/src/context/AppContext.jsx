@@ -16,6 +16,7 @@ export function AppProvider({ children }) {
   const [productionPlan, setProductionPlan]   = useState(null)
   const [exportXML, setExportXML]             = useState(null)
   const [videoTimeline, setVideoTimeline]     = useState(null)
+  const [videoResult, setVideoResult]         = useState(null)    // { videoUrl, evaluation, mode }
   const [publishStatus, setPublishStatus]     = useState(null)
 
   // Navigation
@@ -31,6 +32,7 @@ export function AppProvider({ children }) {
     setProductionPlan(null)
     setExportXML(null)
     setVideoTimeline(null)
+    setVideoResult(null)
     setPublishStatus(null)
     setScreen('auth')
   }, [])
@@ -46,6 +48,7 @@ export function AppProvider({ children }) {
         productionPlan, setProductionPlan,
         exportXML, setExportXML,
         videoTimeline, setVideoTimeline,
+        videoResult, setVideoResult,
         publishStatus, setPublishStatus,
         screen, navigate,
         logout,

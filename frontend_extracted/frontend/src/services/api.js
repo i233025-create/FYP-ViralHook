@@ -3,7 +3,8 @@
 //
 // Flip USE_REAL_BACKEND to true to route the three implemented
 // pipeline endpoints to the FastAPI server (uvicorn server:app --port 8000).
-// Everything else (auth, onboarding, AI video, publishing) stays mocked.
+// AI video also uses the backend (POST /video/generate + status polling).
+// Everything else (auth, publishing) stays mocked.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -242,22 +243,49 @@ export async function exportXML({ plan, onStep }) {
 
 // ── AI Video Generation ───────────────────────────────────────────────────────
 
+// Same order as pipeline/agents/video_agent.py STEPS
+export const VIDEO_STEPS = [
+  { id: 1, label: 'Planning edit style' },
+  { id: 2, label: 'Generating voiceover' },
+  { id: 3, label: 'Planning shots' },
+  { id: 4, label: 'Fetching visual assets' },
+  { id: 5, label: 'Building timeline' },
+  { id: 6, label: 'Rendering video' },
+  { id: 7, label: 'Evaluating video' },
+]
+const VIDEO_POLL_MS = 1500
+
 /**
- * POST /video/generate
- * Returns: { timeline }
+ * POST /video/generate → poll GET /video/status/{jobId}
+ * onStep({ id, label, detail }) fires on every progress change.
+ * Returns: { timeline, videoUrl, evaluation, mode }   (videoUrl null when mocked)
  */
-export async function generateAIVideo({ plan, onStep }) {
-  const steps = [
-    { id: 1, label: 'Processing production plan', done: true },
-    { id: 2, label: 'Generating visual assets', done: true },
-    { id: 3, label: 'Building JSON timeline', done: true },
-    { id: 4, label: 'Rendering video' },
-  ]
-  for (const step of steps) {
-    await delay(step.done ? 500 : 2000)
+export async function generateAIVideo({ plan, mode = 'personalised', onStep }) {
+  if (USE_REAL_BACKEND) {
+    const { jobId } = await apiFetch('/video/generate', { plan, mode })
+    for (;;) {
+      await delay(VIDEO_POLL_MS)
+      const res = await fetch(`${API_BASE}/video/status/${jobId}`)
+      if (!res.ok) throw new Error(`Video status error ${res.status}`)
+      const job = await res.json()
+      if (job.step && onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
+      if (job.status === 'error') throw new Error(job.error || 'Video generation failed')
+      if (job.status === 'done') {
+        return {
+          timeline: MOCK_VIDEO_TIMELINE(job.timeline),   // adds thumbnailBg colours
+          videoUrl: `${API_BASE}${job.videoUrl}`,
+          evaluation: job.evaluation,
+          mode: job.mode,
+        }
+      }
+    }
+  }
+
+  for (const step of VIDEO_STEPS) {
+    await delay(step.id === 6 ? 1500 : 400)
     if (onStep) onStep(step)
   }
-  return { timeline: MOCK_VIDEO_TIMELINE(plan?.scenes) }
+  return { timeline: MOCK_VIDEO_TIMELINE(plan?.scenes), videoUrl: null, evaluation: null, mode }
 }
 
 /**

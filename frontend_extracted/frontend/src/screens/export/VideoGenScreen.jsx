@@ -1,21 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Sparkles, CheckCircle, Clock, Edit2, RefreshCw, ChevronRight, Play } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { generateAIVideo, regenerateVisual } from '../../services/api'
+import { generateAIVideo, regenerateVisual, VIDEO_STEPS } from '../../services/api'
 import { Btn, Card, Badge, ProgressSteps, SectionHeader, Page, Modal, Input, Textarea, Alert } from '../../components/ui'
 import { MOCK_VISUAL_ASSETS } from '../../data/mockData'
 
-const VIDEO_STEPS = [
-  { id: 1, label: 'Processing production plan', done: true },
-  { id: 2, label: 'Generating visual assets', done: true },
-  { id: 3, label: 'Building JSON timeline', done: true },
-  { id: 4, label: 'Rendering video' },
-]
+const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}`)
 
 export default function VideoGenScreen() {
-  const { productionPlan, videoTimeline, setVideoTimeline, navigate } = useApp()
+  const { productionPlan, videoTimeline, setVideoTimeline, videoResult, setVideoResult, navigate } = useApp()
   const [phase, setPhase] = useState('generating')
   const [step, setStep] = useState(0)
+  const [stepDetail, setStepDetail] = useState('')
+  const [error, setError] = useState(null)
+  const [mode, setMode] = useState(videoResult?.mode || 'personalised')
+  const videoRef = useRef(null)
   const [timeline, setTimeline] = useState(videoTimeline || [])
   const [selected, setSelected] = useState(null)
   const [editModal, setEditModal] = useState(false)
@@ -31,16 +30,35 @@ export default function VideoGenScreen() {
     runGeneration()
   }, [])
 
-  const runGeneration = async () => {
+  const runGeneration = async (runMode = mode) => {
     setPhase('generating')
     setStep(0)
-    const { timeline: t } = await generateAIVideo({
-      plan: productionPlan,
-      onStep: (s) => setStep(s.id - 1),
-    })
-    setTimeline(t)
-    setVideoTimeline(t)
-    setPhase('done')
+    setStepDetail('')
+    setError(null)
+    setSelected(null)
+    try {
+      const result = await generateAIVideo({
+        plan: productionPlan,
+        mode: runMode,
+        onStep: (s) => { setStep(s.id - 1); setStepDetail(s.detail || '') },
+      })
+      setTimeline(result.timeline)
+      setVideoTimeline(result.timeline)
+      setVideoResult({ videoUrl: result.videoUrl, evaluation: result.evaluation, mode: result.mode })
+      setPhase('done')
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const switchMode = (m) => { setMode(m); runGeneration(m) }
+
+  const selectScene = (scene) => {
+    setSelected(scene)
+    if (videoRef.current && scene.start !== undefined) {
+      videoRef.current.currentTime = scene.start
+      videoRef.current.play().catch(() => {})
+    }
   }
 
   const openEdit = (scene) => { setEditForm({ ...scene }); setEditModal(true) }
@@ -74,9 +92,19 @@ export default function VideoGenScreen() {
               <h2 className="text-discord-white font-bold">Generating AI Video…</h2>
             </div>
             <ProgressSteps steps={VIDEO_STEPS} currentStep={step} />
-            <Alert type="info" className="mt-4">
-              <span className="font-semibold">Prototype:</span> This is a frontend prototype. The final system will use a JSON timeline → FFmpeg rendering pipeline to produce an MP4.
-            </Alert>
+            {stepDetail && !error && (
+              <p className="text-discord-muted text-xs mt-3 truncate">{stepDetail}</p>
+            )}
+            {error ? (
+              <Alert type="error" className="mt-4">
+                <p>{error}</p>
+                <Btn size="sm" variant="secondary" icon={RefreshCw} className="mt-2" onClick={() => runGeneration()}>Try again</Btn>
+              </Alert>
+            ) : (
+              <Alert type="info" className="mt-4">
+                {mode === 'personalised' ? 'Personalised' : 'Generic baseline'} edit · voiceover → shots → assets → FFmpeg render. Takes a few minutes on the GPU.
+              </Alert>
+            )}
           </Card>
         </div>
       </Page>
@@ -90,16 +118,26 @@ export default function VideoGenScreen() {
         <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
           <SectionHeader icon={Sparkles} title="AI Video Preview" subtitle="Structured timeline — click any scene to inspect and edit." />
           <div className="flex gap-2">
-            <Btn variant="secondary" size="sm" icon={RefreshCw} onClick={runGeneration}>Regenerate</Btn>
+            <div className="flex rounded-lg overflow-hidden border border-discord-faint/30">
+              {['personalised', 'generic'].map((m) => (
+                <button key={m} onClick={() => mode !== m && switchMode(m)}
+                  className={`px-3 py-1.5 text-xs font-semibold ${mode === m ? 'bg-discord-blurple text-white' : 'bg-discord-sidebar text-discord-muted hover:text-discord-white'}`}>
+                  {m === 'personalised' ? 'Personalised' : 'Generic'}
+                </button>
+              ))}
+            </div>
+            <Btn variant="secondary" size="sm" icon={RefreshCw} onClick={() => runGeneration()}>Regenerate</Btn>
             <Btn size="sm" icon={ChevronRight} onClick={() => navigate('publish')}>Continue to Publish</Btn>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-          {/* Mock video player */}
+          {/* Video player (real MP4 from the backend, mock preview otherwise) */}
           <div className="lg:col-span-3">
             <div className="bg-black rounded-2xl overflow-hidden aspect-[9/16] max-h-[420px] flex flex-col items-center justify-center relative border border-discord-faint/20">
-              {selected ? (
+              {videoResult?.videoUrl ? (
+                <video ref={videoRef} src={videoResult.videoUrl} controls playsInline className="w-full h-full object-contain" />
+              ) : selected ? (
                 <>
                   <div className="absolute inset-0 flex items-center justify-center"
                     style={{ backgroundColor: selected.thumbnailBg + '22' }}>
@@ -142,7 +180,7 @@ export default function VideoGenScreen() {
             {timeline.map((scene) => (
               <button
                 key={scene.id}
-                onClick={() => setSelected(scene)}
+                onClick={() => selectScene(scene)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all
                   ${selected?.id === scene.id ? 'bg-discord-blurple/20 border border-discord-blurple/40' : 'bg-discord-sidebar border border-discord-faint/20 hover:border-discord-faint/50'}`}
               >
@@ -158,6 +196,24 @@ export default function VideoGenScreen() {
             ))}
           </div>
         </div>
+
+        {/* Measured evaluation (pipeline/video/evaluator.py) */}
+        {videoResult?.evaluation?.scores && (
+          <Card className="mt-5 p-4 animate-fadeIn">
+            <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide mb-3">
+              Measured style fidelity · {videoResult.mode}
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Score label="Style fidelity" value={pct(videoResult.evaluation.scores.style_fidelity)} />
+              <Score label="Cut pacing match" value={pct(videoResult.evaluation.scores.pacing_match)}
+                hint={`${videoResult.evaluation.measured?.avg_shot_duration ?? '—'}s vs ${videoResult.evaluation.target?.avg_shot_duration ?? '—'}s`} />
+              <Score label="Speech rate match" value={pct(videoResult.evaluation.scores.speech_rate_match)}
+                hint={`${videoResult.evaluation.measured?.speech_rate_wpm ?? '—'} vs ${videoResult.evaluation.target?.speech_rate_wpm ?? '—'} wpm`} />
+              <Score label="CLIP alignment" value={videoResult.evaluation.clip_alignment?.mean?.toFixed(3) ?? '—'}
+                hint={Object.entries(videoResult.evaluation.asset_sources || {}).map(([k, v]) => `${v} ${k}`).join(' · ')} />
+            </div>
+          </Card>
+        )}
 
         {/* Scene actions */}
         {selected && (
@@ -215,5 +271,15 @@ export default function VideoGenScreen() {
         </div>
       </Modal>
     </Page>
+  )
+}
+
+function Score({ label, value, hint }) {
+  return (
+    <div className="bg-discord-sidebar rounded-lg px-3 py-2">
+      <p className="text-discord-muted text-[11px]">{label}</p>
+      <p className="text-discord-white font-bold text-lg">{value}</p>
+      {hint && <p className="text-discord-muted text-[10px] truncate">{hint}</p>}
+    </div>
   )
 }

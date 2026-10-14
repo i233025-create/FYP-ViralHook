@@ -92,6 +92,7 @@ class PipelineState(TypedDict):
       ResearchAgent → sets research_output (or research_error)
       ScriptingAgent→ sets scripting_output (or scripting_error)
       VisualsAgent  → sets visual_prompts (or visual_error)
+      VideoAgent    → sets video_output (or video_error)
     """
 
     # ── Entry point fields (set before graph execution starts) ────────────────
@@ -135,3 +136,10 @@ class PipelineState(TypedDict):
     # Set by visuals_agent.py (Module 3). None until that node runs.
     visual_prompts: Optional[list]
     visual_error: Optional[str]
+
+    # ── Video Agent outputs ────────────────────────────────────────────────────
+    # Set by agents/video_agent.py (Module 4). None until that node runs.
+    # Schema: {"job_id", "mode", "video_path", "timeline_path",
+    #          "evaluation": {"measured", "target", "scores", "clip_alignment", "asset_sources"}}
+    video_output: Optional[dict]
+    video_error: Optional[str]
