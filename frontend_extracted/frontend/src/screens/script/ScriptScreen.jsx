@@ -270,6 +270,7 @@ function VariantCard({ variant: v, selected, onSelect, onEdit }) {
           <ScoreBar label="Style Consistency" value={v.styleConsistency} />
           <ScoreBar label="Hook Alignment"    value={v.hookAlignment} />
           <ScoreBar label="Structure Align."  value={v.structureAlignment} />
+          {v.timingFit !== undefined && <ScoreBar label="Timing Fit" value={v.timingFit} />}
         </div>
 
         {/* Expand toggle */}

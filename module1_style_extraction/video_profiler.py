@@ -1,30 +1,31 @@
 
 """
-video_profiler.py — Per-Video Profile Extraction via Groq LLM
-==============================================================
-This module takes a raw transcript and uses an LLM (LLaMA 3 via Groq) to
-extract a structured per-video profile: topic, hook, tone, pacing, etc.
+video_profiler.py — Per-Video Profile Extraction via LLM
+=========================================================
+This module takes a raw transcript and uses an LLM to extract a structured
+per-video profile: topic, hook, tone, pacing, etc.
 
 Architecture — LCEL (LangChain Expression Language):
   We use the pipe operator pattern:  prompt | llm | output_parser
   This creates a "chain" object that is composable, readable, and testable.
   LCEL is LangChain's modern recommended approach (vs the older LLMChain).
 
-Why Groq?
-  Groq offers a FREE tier for LLaMA 3 with very high throughput. For a
-  university POC this is ideal — no billing required, and LLaMA 3 8B is
-  capable enough for structured JSON extraction from short transcripts.
+Which LLM?
+  The shared client in pipeline/local_llm.py: a local Ollama model by default
+  (no API, no key), or Groq when LLM_PROVIDER=groq. See llm_chain.py.
 """
 
 import json
 import time
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable
-from langchain_groq import ChatGroq
 from rich.console import Console
+
+try:
+    from llm_chain import LocalLLMError, json_chain, provider_label
+except ImportError:  # imported as a package, e.g. by Module 2
+    from module1_style_extraction.llm_chain import LocalLLMError, json_chain, provider_label
 
 console = Console()
 
@@ -62,64 +63,23 @@ Do NOT include any text before or after the JSON. Do NOT use markdown code block
 }}"""
 
 
-def create_video_profiler_chain(groq_api_key: str) -> Runnable:
+def create_video_profiler_chain(groq_api_key: str | None = None) -> Runnable:
     """
-    Build and return the LCEL chain for per-video profile extraction.
+    Build the LCEL chain for per-video profile extraction:
+      prompt | shared LLM (JSON mode)  →  dict
 
-    The chain is a three-stage pipeline composed with the pipe operator (|):
-      ChatPromptTemplate  →  ChatGroq (LLM)  →  JsonOutputParser
+    The LLM comes from pipeline/local_llm.py (LLM_PROVIDER: local Ollama by
+    default, Groq optional). `groq_api_key` is kept for backward
+    compatibility and ignored — Groq reads GROQ_API_KEY from the environment.
 
-    Each stage is a LangChain "Runnable". The pipe operator connects
-    them into a single Runnable that accepts a dict and returns a dict.
-
-    Args:
-        groq_api_key: Groq API key string from environment variables.
+    temperature=0.3: low, because this is structured extraction — we want
+    consistency, with a little randomness so retries can differ.
 
     Returns:
-        A LangChain Runnable (LCEL chain) that accepts:
-            {"transcript": str, "video_url": str}
-        and returns a parsed JSON dict matching the per-video profile schema.
-
-    Raises:
-        ValueError: If groq_api_key is empty.
+        A Runnable that accepts {"transcript": str, "video_url": str}
+        and returns a dict matching the per-video profile schema.
     """
-    if not groq_api_key:
-        raise ValueError(
-            "GROQ_API_KEY is not set. Copy .env.example to .env and add your key "
-            "from https://console.groq.com"
-        )
-
-    # ── Build the prompt template ────────────────────────────────────────────
-    # ChatPromptTemplate.from_template() creates a human-turn message with
-    # the placeholders {transcript} and {video_url} filled by LCEL at runtime.
-    prompt = ChatPromptTemplate.from_template(VIDEO_PROFILE_PROMPT)
-
-    # ── Initialise the Groq LLM ──────────────────────────────────────────────
-    # temperature=0.3: Low temperature makes the output more deterministic.
-    # For structured JSON extraction we want consistency, not creativity.
-    # A small amount of randomness (0.3 vs 0.0) prevents the model from
-    # getting "stuck" repeating identical phrasing across similar transcripts.
-    llm = ChatGroq(
-        api_key=groq_api_key,
-        model_name="openai/gpt-oss-20b",
-        temperature=0.3,
-        # max_tokens=1024 is more than enough for our small JSON schema.
-        # Setting a limit prevents runaway generation and controls API usage.
-        max_tokens=1024,
-    )
-
-    # ── Output parser ────────────────────────────────────────────────────────
-    # JsonOutputParser extracts the JSON object from the LLM's text response.
-    # It handles cases where the model wraps JSON in markdown (```json ...```)
-    # by stripping code fences before parsing.
-    output_parser = JsonOutputParser()
-
-    # ── Compose the LCEL chain ───────────────────────────────────────────────
-    # The pipe operator (|) connects Runnables: the output of each stage
-    # becomes the input of the next. This is the core LCEL pattern.
-    chain = prompt | llm | output_parser
-
-    return chain
+    return json_chain(VIDEO_PROFILE_PROMPT, temperature=0.3, max_tokens=1024)
 
 
 def extract_video_profile(
@@ -171,12 +131,12 @@ def extract_video_profile(
     for attempt in range(1, max_retries + 2):  # +2: range exclusive, start at 1
         try:
             console.print(
-                f"  [cyan]🤖 Sending to Groq LLM[/cyan] "
+                f"  [cyan]🤖 Sending to LLM: {provider_label()}[/cyan] "
                 f"(attempt {attempt}/{max_retries + 1})..."
             )
 
-            # chain.invoke() sends the formatted prompt to Groq and returns
-            # the parsed JSON dict via JsonOutputParser.
+            # chain.invoke() sends the formatted prompt to the LLM and returns
+            # the parsed JSON dict (JSON mode in pipeline/local_llm.py).
             profile: dict = chain.invoke({
                 "transcript": transcript,
                 "video_url": video_url,
@@ -208,7 +168,8 @@ def extract_video_profile(
             )
             return profile
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except (json.JSONDecodeError, ValueError, KeyError, LocalLLMError) as e:
+            # LocalLLMError: invalid JSON from a small local model is worth a retry
             last_error = e
             console.print(
                 f"  [yellow]⚠ JSON parse error (attempt {attempt}): {e}[/yellow]"
@@ -221,7 +182,7 @@ def extract_video_profile(
 
         except Exception as e:
             # Network errors, auth errors, etc. — not retryable
-            raise RuntimeError(f"Groq API call failed: {e}") from e
+            raise RuntimeError(f"LLM call failed: {e}") from e
 
     raise RuntimeError(
         f"Failed to extract valid JSON profile after {max_retries + 1} attempts. "

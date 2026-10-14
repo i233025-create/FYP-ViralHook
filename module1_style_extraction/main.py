@@ -13,13 +13,13 @@ Pipeline Stages:
   │   yt-dlp downloads audio → Whisper tiny (CPU) transcribes          │
   │                                                                     │
   │ STAGE 2: Profile Extraction (per video)                             │
-  │   Transcript → Groq LLaMA3-8b → per-video profile JSON             │
+  │   Transcript → LLM (local Ollama / Groq) → per-video profile JSON  │
   │                                                                     │
   │ STAGE 3: Vector Storage (per video)                                 │
   │   Profile text → all-MiniLM-L6-v2 embedding → ChromaDB             │
   │                                                                     │
   │ STAGE 4: RAG Synthesis (once, after all videos)                     │
-  │   Query → ChromaDB retrieval → Groq LLaMA3-8b → creator profile    │
+  │   Query → ChromaDB retrieval → LLM → creator profile               │
   │                                                                     │
   │ STAGE 5: Output                                                     │
   │   Print JSON to terminal + save to creator_profile.json            │
@@ -29,7 +29,7 @@ Run with:
   python main.py
 
 Prerequisites:
-  - .env file with GROQ_API_KEY (copy from .env.example)
+  - Ollama running locally (default), or LLM_PROVIDER=groq + GROQ_API_KEY in .env
   - ffmpeg installed and on system PATH
   - pip install -r requirements.txt
 """
@@ -39,6 +39,8 @@ import os
 import sys
 import time
 from pathlib import Path
+
+import requests
 
 # ─── Rich Terminal Output ─────────────────────────────────────────────────────
 # Rich provides beautiful formatted terminal output — important for a live demo
@@ -65,10 +67,12 @@ from config import (
     RAG_TOP_K,
     MAX_JSON_RETRIES,
 )
+import transcriber
 from transcriber import process_video, process_local_video, get_local_videos
 from video_profiler import create_video_profiler_chain, extract_video_profile
 from vector_store import initialize_vector_store, store_video_profile, get_retriever
 from creator_profiler import create_creator_profile_chain, build_creator_profile
+from llm_chain import provider_label
 
 console = Console()
 
@@ -80,7 +84,7 @@ def print_banner() -> None:
     """
     banner_text = (
         "  [green]→[/green] Transcription:  [white]OpenAI Whisper (tiny, local CPU)[/white]\n"
-        "  [green]→[/green] LLM:            [white]LLaMA 3 8B via Groq API (free tier)[/white]\n"
+        f"  [green]→[/green] LLM:            [white]{provider_label()}[/white]\n"
         "  [green]→[/green] Embeddings:     [white]all-MiniLM-L6-v2 (HuggingFace, local)[/white]\n"
         "  [green]→[/green] Vector Store:   [white]ChromaDB (local, persistent)[/white]\n"
         "  [green]→[/green] Creator:        [white]Fireship — 3 YouTube Shorts[/white]"
@@ -108,16 +112,27 @@ def validate_configuration() -> None:
 
     errors = []
 
-    # ── Groq API Key check ───────────────────────────────────────────────────
-    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-        errors.append(
-            "GROQ_API_KEY is not set. "
-            "Copy .env.example to .env and add your key from https://console.groq.com"
-        )
+    # ── LLM check (shared client: local Ollama by default, Groq optional) ────
+    if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq":
+        if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+            errors.append(
+                "LLM_PROVIDER=groq but GROQ_API_KEY is not set. "
+                "Add it to .env, or use the local LLM (LLM_PROVIDER=ollama)."
+            )
+        else:
+            # Only display first/last 4 characters — never log full API keys
+            masked = GROQ_API_KEY[:4] + "..." + GROQ_API_KEY[-4:]
+            console.print(f"  [green]✓[/green] LLM: {provider_label()} — key {masked}")
     else:
-        # Only display first/last 4 characters — never log full API keys
-        masked = GROQ_API_KEY[:4] + "..." + GROQ_API_KEY[-4:]
-        console.print(f"  [green]✓[/green] GROQ_API_KEY detected: {masked}")
+        host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        try:
+            requests.get(f"{host}/api/tags", timeout=3).raise_for_status()
+            console.print(f"  [green]✓[/green] LLM: {provider_label()} at {host} (local, no API)")
+        except requests.RequestException:
+            errors.append(
+                f"Ollama is not reachable at {host}. Start Ollama "
+                "(https://ollama.com) or set LLM_PROVIDER=groq in .env."
+            )
 
     # ── Video URLs check ─────────────────────────────────────────────────────
     if not SAMPLE_VIDEO_URLS:
@@ -215,10 +230,10 @@ def main() -> None:
     vector_store = initialize_vector_store(CHROMA_PERSIST_DIR, COLLECTION_NAME)
 
     console.print("\n[bold yellow]⚙ Creating LLM chains...[/bold yellow]")
-    video_chain = create_video_profiler_chain(GROQ_API_KEY)
+    video_chain = create_video_profiler_chain()
     console.print("  [green]✓ Video profiler chain ready (LCEL: prompt | llm | JsonOutputParser)[/green]")
 
-    creator_chain = create_creator_profile_chain(GROQ_API_KEY)
+    creator_chain = create_creator_profile_chain()
     console.print("  [green]✓ Creator profile chain ready[/green]")
 
     retriever = get_retriever(vector_store, k=RAG_TOP_K)
@@ -230,7 +245,7 @@ def main() -> None:
     # ─── STAGES 1 + 2 + 3: Per-Video Processing Loop ──────────────────────────
     # We process videos SEQUENTIALLY (not in parallel) for two reasons:
     #   1. Whisper is CPU-bound — parallel runs would thrash the processor.
-    #   2. Groq free tier has rate limits — parallel calls risk 429 errors.
+    #   2. One LLM call at a time — a local model is CPU-bound, Groq is rate-limited.
 
     # ── Resolve video sources based on INPUT_MODE ─────────────────────────────
     if INPUT_MODE == "local":
@@ -322,7 +337,8 @@ def main() -> None:
         )
 
         try:
-            store_video_profile(vector_store, profile, idx)
+            store_video_profile(vector_store, profile, idx, transcript=transcript,
+                                language=transcriber.last_language)
         except Exception as e:
             console.print(f"  [red]✗ ChromaDB storage failed: {e}[/red]")
 
@@ -330,7 +346,7 @@ def main() -> None:
         if idx < len(video_sources):
             console.print(
                 f"\n  [dim]⏳ Waiting {API_CALL_DELAY}s "
-                f"(Groq rate limit guard)...[/dim]"
+                f"(LLM rate limit guard)...[/dim]"
             )
             time.sleep(API_CALL_DELAY)
 
@@ -338,7 +354,7 @@ def main() -> None:
     if not per_video_profiles:
         console.print(
             "\n[bold red]✗ No video profiles were extracted. "
-            "Check your video files and Groq API key.[/bold red]"
+            "Check your video files and LLM setup.[/bold red]"
         )
         sys.exit(1)
 

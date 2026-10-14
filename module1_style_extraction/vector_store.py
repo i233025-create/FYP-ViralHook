@@ -25,6 +25,7 @@ Why all-MiniLM-L6-v2?
   - ~90 MB, cached after first download.
 """
 
+import json
 from typing import Any
 
 from langchain_community.vectorstores import Chroma
@@ -153,6 +154,8 @@ def store_video_profile(
     vector_store: Chroma,
     profile: dict[str, Any],
     video_index: int,
+    transcript: str = "",
+    language: str = "",
 ) -> None:
     """
     Store a per-video profile as a vector-embedded document in ChromaDB.
@@ -162,10 +165,16 @@ def store_video_profile(
       2. The embedding vector (for similarity search).
       3. Metadata dict (for filtering/display — NOT used in similarity search).
 
+    The raw Whisper transcript is kept in metadata so the Scripting Agent
+    can show the LLM the creator's real words (few-shot examples) and
+    measure their style (sentence length, questions, "you"-address).
+
     Args:
         vector_store: Chroma instance from initialize_vector_store().
         profile:      Per-video profile dict from extract_video_profile().
         video_index:  1-based index used as the document ID and in metadata.
+        transcript:   Raw transcript text for this video.
+        language:     Spoken language Whisper detected (e.g. "en", "hi").
     """
     # Convert the profile dict to human-readable text for embedding.
     document_text = _profile_to_document_text(profile, video_index)
@@ -179,6 +188,10 @@ def store_video_profile(
         "tone": profile.get("tone", "Unknown"),
         "pacing": profile.get("pacing", "Unknown"),
         "hook_type": profile.get("hook_type", "Unknown"),
+        "hook_text": profile.get("hook_text", ""),
+        "key_phrases": json.dumps(profile.get("key_phrases", []), ensure_ascii=False),
+        "transcript": transcript,
+        "language": language,
     }
 
     # Use a deterministic document ID so that re-running the pipeline

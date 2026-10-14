@@ -20,12 +20,14 @@ import json
 import time
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.runnables import Runnable
 from langchain_core.retrievers import BaseRetriever
-from langchain_groq import ChatGroq
 from rich.console import Console
+
+try:
+    from llm_chain import LocalLLMError, json_chain, provider_label
+except ImportError:  # imported as a package, e.g. by Module 2
+    from module1_style_extraction.llm_chain import LocalLLMError, json_chain, provider_label
 
 console = Console()
 
@@ -66,52 +68,21 @@ Do NOT include any text before or after the JSON. Do NOT use markdown code block
 }}"""
 
 
-def create_creator_profile_chain(groq_api_key: str) -> Runnable:
+def create_creator_profile_chain(groq_api_key: str | None = None) -> Runnable:
     """
-    Build and return the LCEL chain for master creator profile synthesis.
+    Build the LCEL chain for master creator profile synthesis:
+      prompt | shared LLM (JSON mode)  →  dict
 
-    Structurally identical to the video profiler chain but uses a different
-    prompt (creator-level synthesis vs single-video extraction) and a slightly
-    higher temperature to encourage more expressive, cross-video reasoning.
-
-    Args:
-        groq_api_key: Groq API key string from environment variables.
+    Same shared LLM as the video profiler (pipeline/local_llm.py); a slightly
+    higher temperature (0.4) because synthesis means spotting patterns across
+    videos rather than extracting literal values. `groq_api_key` is kept for
+    backward compatibility and ignored.
 
     Returns:
-        A LangChain Runnable (LCEL chain) that accepts:
-            {"context": str}   ← formatted string of retrieved video profiles
-        and returns a parsed JSON dict matching the master creator profile schema.
-
-    Raises:
-        ValueError: If groq_api_key is empty.
+        A Runnable that accepts {"context": str} (formatted retrieved video
+        profiles) and returns a dict matching the master creator profile schema.
     """
-    if not groq_api_key:
-        raise ValueError(
-            "GROQ_API_KEY is not set. Copy .env.example to .env and add your key."
-        )
-
-    # ── Prompt template ──────────────────────────────────────────────────────
-    prompt = ChatPromptTemplate.from_template(CREATOR_PROFILE_PROMPT)
-
-    # ── LLM ──────────────────────────────────────────────────────────────────
-    # temperature=0.4: Slightly higher than video_profiler (0.3) because
-    # synthesis requires more creative reasoning — identifying patterns across
-    # documents rather than extracting literal values from a single transcript.
-    llm = ChatGroq(
-        api_key=groq_api_key,
-        model_name="openai/gpt-oss-20b",
-        temperature=0.4,
-        # Master profile is more verbose — give the LLM more room to write.
-        max_tokens=2048,
-    )
-
-    # ── Output parser ────────────────────────────────────────────────────────
-    output_parser = JsonOutputParser()
-
-    # ── LCEL chain ───────────────────────────────────────────────────────────
-    chain = prompt | llm | output_parser
-
-    return chain
+    return json_chain(CREATOR_PROFILE_PROMPT, temperature=0.4, max_tokens=2048)
 
 
 def _format_retrieved_docs(docs: list) -> str:
@@ -207,7 +178,7 @@ def build_creator_profile(
     for attempt in range(1, max_retries + 2):
         try:
             console.print(
-                f"\n  [cyan]🤖 Synthesising creator profile via Groq LLM[/cyan] "
+                f"\n  [cyan]🤖 Synthesising creator profile via {provider_label()}[/cyan] "
                 f"(attempt {attempt}/{max_retries + 1})..."
             )
 
@@ -235,7 +206,7 @@ def build_creator_profile(
             )
             return creator_profile
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except (json.JSONDecodeError, ValueError, KeyError, LocalLLMError) as e:
             last_error = e
             console.print(
                 f"  [yellow]⚠ Parse error (attempt {attempt}): {e}[/yellow]"
@@ -246,7 +217,7 @@ def build_creator_profile(
 
         except Exception as e:
             raise RuntimeError(
-                f"Groq API call failed during profile synthesis: {e}"
+                f"LLM call failed during profile synthesis: {e}"
             ) from e
 
     raise RuntimeError(

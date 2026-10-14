@@ -6,7 +6,7 @@ Endpoints:
   GET  /health
   GET  /onboarding/profile        → reads creator_profile.json → frontend profile shape
   POST /research/trends           → Research Agent: trending topics from real YouTube Shorts
-  POST /script/generate           → RAG scripting agent (3 modes)
+  POST /script/generate           → Scripting Agent: 3 hook variants, measured evaluator
   POST /export/xml                → Premiere Pro XML from production plan
 
 Run:
@@ -80,44 +80,38 @@ def _scene_to_frontend(scene, index: int, total: int) -> dict:
     }
 
 
-def _script_to_variant(script, mode: str, topic: str, eval_scores: Optional[dict], regen: bool) -> dict:
+def _score_pct(scores: dict, key: str) -> Optional[int]:
+    """Evaluator 0-10 → 0-100. None stays None (metric could not be measured)."""
+    value = scores.get(key)
+    if value is None:
+        return None
+    return max(0, min(100, round(float(value) * 10)))
+
+
+def _script_to_variant(script, metadata: dict, topic: str, index: int) -> dict:
+    """Map a scripting_agent result to the variant card the frontend renders."""
     s = script if isinstance(script, dict) else script.model_dump()
     scenes_raw = s.get("scenes", [])
     scenes = [_scene_to_frontend(sc, i, len(scenes_raw)) for i, sc in enumerate(scenes_raw)]
-    _defaults = {
-        "no_history":     (65, 60, 62, 62),
-        "retrieval_only": (78, 75, 80, 78),
-        "full_pipeline":  (88, 85, 90, 88),
-    }
-    d_sc, d_ha, d_sa, d_ov = _defaults.get(mode, (70, 70, 70, 70))
-    if eval_scores:
-        sc  = int(float(eval_scores.get("style_match",            d_sc / 10)) * 10)
-        ha  = int(float(eval_scores.get("hook_strength",          d_ha / 10)) * 10)
-        sa  = int(float(eval_scores.get("structure_adherence",    d_sa / 10)) * 10)
-        ov  = int(float(eval_scores.get("overall",                d_ov / 10)) * 10)
-    else:
-        sc, ha, sa, ov = d_sc, d_ha, d_sa, d_ov
-    _labels     = {"no_history": "VARIANT A", "retrieval_only": "VARIANT B", "full_pipeline": "VARIANT C"}
-    _structures = {
-        "no_history":     "Hook → Points → Conclusion (baseline — no creator context)",
-        "retrieval_only": "Hook → Context → Evidence → Takeaway (RAG examples injected)",
-        "full_pipeline":  "Hook → Misconception → Explanation → CTA (RAG + evaluator loop)",
-    }
+    scores = metadata.get("evaluator_scores") or {}
     return {
-        "id": f"sv_{mode}",
-        "label": _labels.get(mode, "VARIANT"),
+        "id": f"sv_{index + 1}",
+        "label": f"VARIANT {chr(ord('A') + index)}",
         "topic": topic,
         "hook": scenes[0]["voiceover"] if scenes else "",
         "hookType": s.get("hook_type", "Bold Claim"),
-        "structure": _structures.get(mode, "Hook → Problem → Solution"),
-        "styleConsistency":   max(0, min(100, sc)),
-        "hookAlignment":      max(0, min(100, ha)),
-        "structureAlignment": max(0, min(100, sa)),
-        "overall":            max(0, min(100, ov)),
+        "structure": metadata.get("structure", ""),
+        # All measured by the evaluator; None = not measurable (e.g. no transcripts yet)
+        "styleConsistency":   _score_pct(scores, "style_match"),
+        "hookAlignment":      _score_pct(scores, "hook_strength"),
+        "structureAlignment": _score_pct(scores, "structure"),
+        "timingFit":          _score_pct(scores, "timing"),
+        "overall":            _score_pct(scores, "overall"),
         "scenes": scenes,
-        "mode": mode,
-        "regenTriggered": regen,
-        "evaluatorScores": eval_scores,
+        "mode": metadata.get("mode", "full_pipeline"),
+        "regenTriggered": metadata.get("regen_triggered", False),
+        "evaluatorScores": scores,
+        "feedback": scores.get("feedback", []),
     }
 
 
@@ -173,6 +167,7 @@ class ResearchRequest(BaseModel):
 class ScriptRequest(BaseModel):
     topic: str
     niche: Optional[str] = "Tech"
+    trend: Optional[dict] = None   # research topic card: why_trending, suggested_angle, evidence
 
 class ExportXMLRequest(BaseModel):
     plan: dict
@@ -186,6 +181,7 @@ class ExportXMLRequest(BaseModel):
 def health():
     return {
         "status": "ok",
+        "llm_provider": os.getenv("LLM_PROVIDER", "ollama"),
         "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
         "creator_profile_exists": PROFILE_PATH.exists(),
     }
@@ -279,92 +275,42 @@ def research_trends(body: ResearchRequest):
 @app.post("/script/generate")
 def generate_scripts(body: ScriptRequest):
     """
-    POST /script/generate  { topic, niche }
+    POST /script/generate  { topic, niche, trend? }
 
-    Runs all 3 scripting modes:
-      - Variant A (no_history):     baseline LLM, no creator context
-      - Variant B (retrieval_only): RAG examples from ChromaDB injected
-      - Variant C (full_pipeline):  RAG + creator profile + evaluator + regen loop
+    Runs the Scripting Agent's full pipeline once per creator signature hook
+    → 3 variants. Each is written in the creator's voice (real transcripts as
+    examples), scored by the measured evaluator (style, timing, structure,
+    hook rubric) and rewritten with concrete feedback when below threshold.
 
-    This is the core FYP contribution — the score difference between A and C
-    demonstrates that creator-specific RAG improves script quality.
+    `trend` is an optional research topic card (why_trending, suggested_angle,
+    evidence) that gives the writer trend context.
+
+    The A/B/C ablation (no_history vs retrieval_only vs full_pipeline) is a
+    research experiment and lives in pipeline/test_scripting_comparison.py.
     """
+    from pipeline.agents.scripting_agent import generate_variants, REGEN_THRESHOLD
+    from pipeline.local_llm import LocalLLMError
+
+    if not PROFILE_PATH.exists():
+        raise HTTPException(status_code=400,
+                            detail="No creator profile found. Run Module 1 pipeline first.")
+    with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+        creator_profile = json.load(f)
+
     try:
-        from pipeline.agents.scripting_agent import (
-            generate_no_history,
-            generate_retrieval_only,
-            generate_full_pipeline,
-            _load_creator_profile,
-            _load_chroma_retriever,
-            _load_multimodal_retriever,
-            _retrieve_examples,
-            _retrieve_examples_qdrant,
-            _extract_style_params,
-        )
-        from langchain_groq import ChatGroq
-
-        creator_profile = _load_creator_profile()
-        if not creator_profile:
-            raise HTTPException(
-                status_code=400,
-                detail="No creator profile found. Run Module 1 pipeline first."
-            )
-
-        style_params = _extract_style_params(creator_profile)
-
-        api_key = os.getenv("GROQ_API_KEY", "")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="GROQ_API_KEY not set.")
-
-        llm = ChatGroq(api_key=api_key, model_name="openai/gpt-oss-120b",
-                       temperature=0.7, max_tokens=1200)
-
-        # Try Qdrant (module2 multimodal) first, fall back to ChromaDB (module1)
-        qdrant_client, has_multimodal = _load_multimodal_retriever()
-        if has_multimodal:
-            retrieved = _retrieve_examples_qdrant(qdrant_client, body.topic)
-            print(f"[server] Using multimodal Qdrant retrieval")
-        else:
-            retriever = _load_chroma_retriever()
-            retrieved = _retrieve_examples(retriever, body.topic) if retriever else ""
-            print(f"[server] Using ChromaDB retrieval")
-
-        import time
-        variants = []
-
-        # Variant A — no creator context (baseline for comparison)
-        script_a, meta_a = generate_no_history(body.topic, style_params, llm)
-        variants.append(_script_to_variant(
-            script_a, "no_history", body.topic,
-            meta_a.get("evaluator_scores"), meta_a.get("regen_triggered", False)
-        ))
-
-        time.sleep(20)  # wait for TPM window to reset between modes
-
-        # Variant B — RAG retrieval only
-        script_b, meta_b = generate_retrieval_only(body.topic, style_params, creator_profile, retrieved, llm)
-        variants.append(_script_to_variant(
-            script_b, "retrieval_only", body.topic,
-            meta_b.get("evaluator_scores"), meta_b.get("regen_triggered", False)
-        ))
-
-        time.sleep(20)  # wait for TPM window to reset between modes
-
-        # Variant C — full pipeline (RAG + evaluator + regeneration loop)
-        script_c, meta_c = generate_full_pipeline(body.topic, style_params, creator_profile, retrieved, llm)
-        variants.append(_script_to_variant(
-            script_c, "full_pipeline", body.topic,
-            meta_c.get("evaluator_scores"), meta_c.get("regen_triggered", False)
-        ))
-
-        return {"failed": False, "variants": variants}
-
-    except HTTPException:
-        raise
-    except ImportError as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline import error: {e}")
+        results = generate_variants(body.topic, trend=body.trend, profile=creator_profile)
+    except LocalLLMError as e:
+        raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Script generation failed: {e}")
+
+    variants = [_script_to_variant(script, meta, body.topic, i)
+                for i, (script, meta) in enumerate(results)]
+    passing = REGEN_THRESHOLD * 10
+    return {
+        "failed": all(v["overall"] is not None and v["overall"] < passing for v in variants),
+        "variants": variants,
+    }
 
 
 # ── XML Export ────────────────────────────────────────────────────────────────

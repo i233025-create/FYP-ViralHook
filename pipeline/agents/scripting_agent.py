@@ -1,461 +1,298 @@
 """
 scripting_agent.py — LangGraph Scripting Agent Node
 =====================================================
-Generates a short-form video script from a trending topic and creator profile.
+Writes 30-second short-form scripts in the creator's own voice, then
+checks them with MEASURED metrics and rewrites with concrete feedback.
 
-Implements three modes for ablation comparison (FYP research contribution):
+Flow:
+  [1] Context     creator profile (Module 1) + the creator's REAL transcripts
+                  (ChromaDB metadata) + speech rate / visual style (Module 2
+                  Qdrant snapshot) → style baseline + word budget
+                  (30 s × creator's words-per-minute).
+  [2] Retrieve    MiniLM: topic → 2-3 most similar past transcripts, shown to
+                  the LLM as "this is how this creator talks".
+  [3] Generate    LLM (local Ollama by default) in JSON mode → 5 scenes.
+                  Pydantic-validated; one repair retry if unusable.
+  [4] Evaluate    style_match   stylometrics vs the creator's transcripts
+                                (sentence length, "you"-address, questions)
+                  timing        spoken words vs the 30-second word budget
+                  structure     5 scenes, ordered timecodes, ends ~0:30,
+                                real hook, short captions, no near-empty scenes,
+                                no repeated scenes, no 8-word runs copied
+                                from the creator's past transcripts
+                  hook_strength LLM judge, fixed 6-question × 5-level rubric —
+                                the ONLY subjective metric. Calibrated once
+                                against a deliberately weak control hook; a
+                                judge that rates it ≥ 5 is ignored (n/a).
+                  overall = mean of the available metrics (0-10).
+  [5] Regenerate  full_pipeline only: if overall < 7, any metric < 5, or the script copies /
+                  repeats content, rewrite with the measured problems as
+                  feedback (max 2 rewrites); keep the best original script.
 
-  Mode 1 — no_history
-    Single LLM call with topic only. No creator context, no feedback.
-    Baseline: what does the LLM produce without any personalisation?
+Three modes (ablation study — FYP research contribution):
+  no_history      topic + trend context + hook/structure only
+  retrieval_only  + creator profile, word budget, real transcripts
+  full_pipeline   retrieval_only + evaluate → regenerate loop
+All three get the same trend context, hook type and structure, and ALL
+three are scored by the same evaluator, so their scores are comparable.
 
-  Mode 2 — retrieval_only
-    LLM call with RAG context injected:
-      - Per-video profile examples retrieved from ChromaDB (few-shot)
-      - Full creator_profile.json as style guide
-    Tests: does retrieval alone improve style alignment?
-
-  Mode 3 — full_pipeline
-    retrieval_only + evaluator scoring + conditional regeneration loop.
-    Evaluator scores style_match, hook_strength, structure_adherence (0-10).
-    If overall score < REGEN_THRESHOLD (7.0), regenerates with feedback.
-    Capped at MAX_REGEN_ATTEMPTS (2) to control API usage.
-    Tests: does evaluation + feedback further improve output?
-
-All three modes use the same:
-  - Topic (from research_output.topic)
-  - Creator's dominant hook_type and structure_type (from creator_profile)
-  - 5-scene, 30-second target format
-  - Same LLM (openai/gpt-oss-20b via Groq)
-
-Output schema (ScriptOutput Pydantic model, defined in pipeline/state.py):
-  script_id, concept_name, hook_type, scenes[{timecode, clip_idea,
-  caption, voiceover}]
-
-The LangGraph node (scripting_agent()) reads mode from state and writes
-scripting_output. The comparison script (test_scripting_comparison.py)
-runs all three modes and prints results side by side.
+Product use (server, LangGraph node): generate_variants() runs the full
+pipeline once per creator signature hook → 3 distinct variants.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import time
+import re
+import statistics
+import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from dotenv import load_dotenv
-from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
+ROOT = Path(__file__).parent.parent.parent
 
 # Load .env
-load_dotenv(Path(__file__).parent.parent.parent / "module1_style_extraction" / ".env")
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+load_dotenv(ROOT / "module1_style_extraction" / ".env")
+load_dotenv(ROOT / ".env")
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from pipeline.state import PipelineState, ScriptingOutput, ScriptOutput, SceneOutput
+sys.path.insert(0, str(ROOT))
+from pipeline.state import PipelineState, ScriptingOutput, ScriptOutput, SceneOutput  # noqa: E402
+from pipeline.local_llm import LocalLLMError, chat_json  # noqa: E402
+from pipeline.embeddings import embed_texts  # noqa: E402
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
-GROQ_MODEL = "openai/gpt-oss-20b"
-CHROMA_PERSIST_DIR = str(
-    Path(__file__).parent.parent.parent / "module1_style_extraction" / "chroma_db"
-)
+CHROMA_PERSIST_DIR = ROOT / "module1_style_extraction" / "chroma_db"
 COLLECTION_NAME = "video_profiles"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-CREATOR_PROFILE_PATH = (
-    Path(__file__).parent.parent.parent / "module1_style_extraction" / "creator_profile.json"
-)
+CREATOR_PROFILE_PATH = ROOT / "module1_style_extraction" / "creator_profile.json"
+QDRANT_SNAPSHOT_PATH = ROOT / "module2_multimodal_rag" / "qdrant_snapshot.json"
 
-REGEN_THRESHOLD = 7.0       # Regenerate if overall score below this
-MAX_REGEN_ATTEMPTS = 2      # Max regeneration loops in full_pipeline mode
-RAG_TOP_K = 3               # Number of ChromaDB documents to retrieve
+MODES = ("no_history", "retrieval_only", "full_pipeline")
+DEFAULT_HOOKS = ["Bold Claim", "Curiosity Gap", "Contrarian"]
 
+SCRIPT_DURATION_S = 30
+SCENE_COUNT = 5
+DEFAULT_WPM = 150            # used only when Module 2 has no speech-rate data
+MIN_HOOK_WORDS = 4           # a one-word "hook" (e.g. echoing "Contrarian") is not a hook
+MIN_SCENE_WORDS = 3          # same for any scene
+COPY_NGRAM = 8               # this many consecutive words from a past transcript = copied
+REPEAT_SIMILARITY = 0.8      # word overlap (Jaccard) at which two scenes count as repeats
+MAX_HOOK_WORDS = 15
+MAX_CAPTION_WORDS = 8
 
-# ─── Prompt Templates ──────────────────────────────────────────────────────────
+# What each hook type means — small models otherwise write the label itself.
+# No quotable example sentences: small models copy them word for word.
+HOOK_GUIDE = {
+    "contrarian": "say that a popular belief about this topic is wrong, then hint at the real answer",
+    "bold claim": "open with a strong, confident statement that sounds surprising",
+    "curiosity gap": "tease something the viewer only learns by watching to the end",
+    "question": "ask the viewer a direct question they want answered",
+    "story": "start in the middle of a short personal moment",
+    "shock": "open with a surprising fact or consequence",
+    "statistic": "open with one striking number about the topic",
+}
 
-# Mode 1: no creator context at all
-NO_HISTORY_PROMPT = """You are a short-form video scriptwriter.
-Write a compelling 30-second video script about the following topic.
+RAG_TOP_K = 3
+STYLE_LANGUAGE = "en"        # only transcripts spoken in this language define the style
+MIN_TRANSCRIPT_WORDS = 20    # shorter transcripts (e.g. a 3-word music video) show no style
+MIN_BASELINE_WORDS = 150     # fewer words in total → style_match is low confidence
+EXAMPLE_MAX_CHARS = 900      # per transcript in the prompt (small-model context)
 
-TOPIC: {topic}
+GEN_TEMPERATURE = 0.7
+GEN_MAX_TOKENS = 1200
+REGEN_THRESHOLD = 7.0        # full_pipeline rewrites below this overall score
+MIN_METRIC_SCORE = 5.0       # ...or when any single measured metric is below this
+MAX_REGEN_ATTEMPTS = 2
+STYLE_FEEDBACK_BELOW = 0.7   # per-feature closeness that triggers feedback
 
-Requirements:
-- Exactly 5 scenes
-- Target duration: 30 seconds total
-- Hook must grab attention in the first 3 seconds
-- Hook type to use: {hook_type}
-- Content structure to follow: {structure}
-
-Output ONLY a valid JSON object. No text before or after. No markdown code blocks.
-
-{{
-  "script_id": 1,
-  "concept_name": "short creative name for this script concept",
-  "hook_type": "{hook_type}",
-  "scenes": [
-    {{
-      "timecode": "0:00-0:05",
-      "clip_idea": "detailed visual description for B-roll or AI image generation",
-      "caption": "short on-screen subtitle text (max 8 words)",
-      "voiceover": "exact spoken narration for this scene"
-    }}
-  ]
-}}
-
-Each scene must have a timecode, clip_idea, caption, and voiceover.
-The 5 scenes should total approximately 30 seconds."""
-
-
-# Mode 2 & 3: with RAG context (ChromaDB examples + creator profile)
-RETRIEVAL_PROMPT = """You are an expert short-form video scriptwriter specialising in
-creator-style replication. You have been given a creator's style profile and examples
-of their past content. Your job is to write a new script that sounds EXACTLY like
-this creator — matching their tone, pacing, hook style, and structure.
-
-CREATOR STYLE PROFILE:
-{creator_profile}
-
-EXAMPLES FROM CREATOR'S PAST VIDEOS (retrieved from their content library):
-{retrieved_examples}
-
-NEW TOPIC TO SCRIPT: {topic}
-
-Requirements:
-- Exactly 5 scenes, 30 seconds total
-- Hook type: {hook_type} (this creator's signature hook style)
-- Structure: {structure} (this creator's typical content structure)
-- Tone: {tone} (match this exactly)
-- Pacing: {pacing} (fast-paced = short punchy sentences, slow = longer narrative)
-- Target audience: {target_audience}
-
-Write a script that a viewer who knows this creator would immediately recognise
-as their content. Do NOT write generic content — make it specific and on-brand.
-
-Output ONLY a valid JSON object. No text before or after. No markdown code blocks.
-
-{{
-  "script_id": 1,
-  "concept_name": "short creative name for this script concept",
-  "hook_type": "{hook_type}",
-  "scenes": [
-    {{
-      "timecode": "0:00-0:05",
-      "clip_idea": "detailed visual description for B-roll or AI image generation",
-      "caption": "short on-screen subtitle text (max 8 words)",
-      "voiceover": "exact spoken narration for this scene"
-    }}
-  ]
-}}"""
+METRICS = ("style_match", "timing", "structure", "hook_strength")
+YOU_WORDS = {"you", "your", "you're", "youre", "yours", "yourself", "yourselves"}
 
 
-# Evaluator prompt — used only in full_pipeline mode
-EVALUATOR_PROMPT = """You are an expert content strategist evaluating a short-form
-video script against a creator's established style profile.
-
-CREATOR STYLE PROFILE:
-{creator_profile}
-
-SCRIPT TO EVALUATE:
-{script}
-
-Score this script on THREE criteria (each 0-10):
-
-1. style_match: How well does the script match the creator's tone, vocabulary,
-   and personality? (10 = indistinguishable from their real content)
-
-2. hook_strength: How compelling and scroll-stopping is the opening hook?
-   (10 = extremely strong, would stop 90%+ of viewers)
-
-3. structure_adherence: How closely does the script follow the creator's
-   typical content structure ({structure})?
-   (10 = follows the structure perfectly)
-
-Output ONLY a valid JSON object. No text before or after.
-
-{{
-  "style_match": 7,
-  "hook_strength": 8,
-  "structure_adherence": 6,
-  "overall": 7.0,
-  "feedback": "specific, actionable feedback for improvement in 2-3 sentences"
-}}"""
-
-
-# Regeneration prompt — used when score < REGEN_THRESHOLD
-REGEN_PROMPT = """You are an expert short-form video scriptwriter. Your previous
-script attempt received a quality score of {score}/10 with this feedback:
-
-FEEDBACK: {feedback}
-
-CREATOR STYLE PROFILE:
-{creator_profile}
-
-EXAMPLES FROM CREATOR'S PAST VIDEOS:
-{retrieved_examples}
-
-TOPIC: {topic}
-Hook type: {hook_type}
-Structure: {structure}
-Tone: {tone}
-Pacing: {pacing}
-Target audience: {target_audience}
-
-Rewrite the script addressing the feedback. Focus specifically on improving
-the areas mentioned. Keep what was working, fix what wasn't.
-
-Output ONLY a valid JSON object. No text before or after. No markdown code blocks.
-
-{{
-  "script_id": 1,
-  "concept_name": "short creative name for this script concept",
-  "hook_type": "{hook_type}",
-  "scenes": [
-    {{
-      "timecode": "0:00-0:05",
-      "clip_idea": "detailed visual description for B-roll or AI image generation",
-      "caption": "short on-screen subtitle text (max 8 words)",
-      "voiceover": "exact spoken narration for this scene"
-    }}
-  ]
-}}"""
-
-
-# ─── Utility Functions ─────────────────────────────────────────────────────────
+# ─── [1] Creator Context ───────────────────────────────────────────────────────
 
 def _load_creator_profile() -> dict:
-    """
-    Load the master creator profile from Module 1's output JSON file.
-
-    Returns an empty dict if the file doesn't exist (graceful degradation).
-    """
+    """Load creator_profile.json from Module 1 ({} if missing)."""
     if not CREATOR_PROFILE_PATH.exists():
-        print(f"[ScriptingAgent] WARNING: creator_profile.json not found at "
-              f"{CREATOR_PROFILE_PATH}. Run Module 1 first.")
         return {}
     with open(CREATOR_PROFILE_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _load_chroma_retriever():
-    """
-    Load the ChromaDB vector store from Module 1 and return a retriever.
-    Returns None if ChromaDB doesn't exist (graceful degradation).
-    """
-    if not Path(CHROMA_PERSIST_DIR).exists():
-        print(f"[ScriptingAgent] WARNING: ChromaDB not found at {CHROMA_PERSIST_DIR}. "
-              f"Run Module 1 first.")
-        return None
-
-    embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
-    )
-
-    vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=CHROMA_PERSIST_DIR,
-    )
-
-    doc_count = vector_store._collection.count()
-    if doc_count == 0:
-        print("[ScriptingAgent] WARNING: ChromaDB collection is empty. "
-              "Run Module 1 first to populate it.")
-        return None
-
-    print(f"[ScriptingAgent] ChromaDB loaded: {doc_count} documents")
-    return vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": RAG_TOP_K},
-    )
-
-
-def _load_multimodal_retriever():
-    """
-    Load the Qdrant in-memory store from Module 2 if available.
-
-    Module 2 persists its Qdrant data to a JSON snapshot file
-    (qdrant_snapshot.json) after each run so it can be reloaded.
-
-    Returns (client, True) if Module 2 data available,
-            (None, False) otherwise — falls back to ChromaDB.
-    """
-    _ROOT = Path(__file__).parent.parent.resolve()
-    snapshot_path = _ROOT / "module2_multimodal_rag" / "qdrant_snapshot.json"
-
-    if not snapshot_path.exists():
-        return None, False
-
+def _json_list(value: Any) -> list:
+    if isinstance(value, list):
+        return value
     try:
-        import json
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import Distance, VectorParams, PointStruct
-        import uuid as _uuid
-
-        with open(snapshot_path, "r", encoding="utf-8") as f:
-            snapshot = json.load(f)
-
-        points = snapshot.get("points", [])
-        if not points:
-            return None, False
-
-        client = QdrantClient(":memory:")
-        client.create_collection(
-            collection_name="multimodal_profiles",
-            vectors_config={
-                "text":   VectorParams(size=384, distance=Distance.COSINE),
-                "visual": VectorParams(size=512, distance=Distance.COSINE),
-            },
-        )
-        client.upsert(
-            collection_name="multimodal_profiles",
-            points=[
-                PointStruct(
-                    id=str(_uuid.uuid4()),
-                    vector={
-                        "text":   p["text_vector"],
-                        "visual": p["visual_vector"],
-                    },
-                    payload=p["payload"],
-                )
-                for p in points
-                if p.get("text_vector") and p.get("visual_vector")
-            ],
-        )
-        count = client.count(collection_name="multimodal_profiles").count
-        print(f"[ScriptingAgent] Qdrant (multimodal) loaded: {count} documents")
-        return client, True
-
-    except Exception as e:
-        print(f"[ScriptingAgent] Qdrant load failed: {e} — falling back to ChromaDB")
-        return None, False
+        parsed = json.loads(value or "[]")
+        return parsed if isinstance(parsed, list) else []
+    except (TypeError, ValueError):
+        return []
 
 
-def _retrieve_examples_qdrant(client, topic: str, k: int = 3) -> str:
+def load_creator_examples() -> list[dict]:
     """
-    Query Qdrant multimodal store for relevant video profiles.
-    Uses text vector search (topic query → all-MiniLM embedding).
-    Returns formatted string for prompt injection — same format as ChromaDB version.
+    Past videos with their real transcripts from Module 1's ChromaDB.
+    Returns [] if ChromaDB is missing or was built before transcripts
+    were stored (re-run Module 1 to fix).
     """
+    if not CHROMA_PERSIST_DIR.exists():
+        print(f"[ScriptingAgent] ChromaDB not found at {CHROMA_PERSIST_DIR} — run Module 1")
+        return []
     try:
-        from langchain_community.embeddings import HuggingFaceEmbeddings as HFEmb
-        embedder = HFEmb(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
-        query    = f"content style hook tone pacing structure for topic: {topic}"
-        q_vector = embedder.embed_query(query)
-
-        response = client.query_points(
-            collection_name="multimodal_profiles",
-            query=q_vector,
-            using="text",
-            limit=min(k, client.count(collection_name="multimodal_profiles").count),
-            with_payload=True,
-        )
-        points = response.points
-
-        if not points:
-            return "No relevant examples found in creator's multimodal library."
-
-        parts = []
-        for i, p in enumerate(points, 1):
-            pl = p.payload or {}
-            entry = (
-                f"--- Example {i} (Multimodal Profile) ---\n"
-                f"Hook Type: {pl.get('hook_type', 'N/A')}\n"
-                f"Tone: {pl.get('tone', 'N/A')}\n"
-                f"Structure: {pl.get('structure', 'N/A')}\n"
-                f"Visual Pacing: {pl.get('visual_pacing', 'N/A')} "
-                f"({pl.get('avg_shot_duration', '?')}s avg shot)\n"
-                f"Talking Head: {pl.get('talking_head_pct', 0)*100:.0f}% | "
-                f"B-Roll: {pl.get('broll_pct', 0)*100:.0f}%\n"
-                f"Speech Rate: {pl.get('speech_rate_wpm', 'N/A')} wpm "
-                f"({pl.get('speech_rate_label', '')})\n"
-                f"Energy: {pl.get('energy_label', 'N/A')}\n"
-                f"Key Phrases: {', '.join(pl.get('key_phrases', [])[:5])}\n"
-                f"Summary: {pl.get('transcript_summary', 'N/A')}"
-            )
-            parts.append(entry)
-
-        return "\n\n".join(parts)
-
+        import chromadb
+        client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+        metadatas = client.get_collection(COLLECTION_NAME).get(include=["metadatas"])["metadatas"]
     except Exception as e:
-        return f"Qdrant retrieval failed: {e}"
+        print(f"[ScriptingAgent] ChromaDB read failed: {e}")
+        return []
+
+    examples = []
+    for meta in metadatas or []:
+        transcript = (meta or {}).get("transcript", "")
+        if transcript and transcript.strip():
+            examples.append({
+                "topic": meta.get("topic", ""),
+                "hook_type": meta.get("hook_type", ""),
+                "hook_text": meta.get("hook_text", ""),
+                "key_phrases": _json_list(meta.get("key_phrases")),
+                "transcript": transcript.strip(),
+                "language": (meta.get("language") or "").lower(),   # Whisper-detected; "" if unknown
+            })
+    if metadatas and not examples:
+        print("[ScriptingAgent] ChromaDB has no transcripts — re-run Module 1 to store them")
+    return examples
 
 
-def _retrieve_examples(retriever, topic: str) -> str:
-    """
-    Query ChromaDB for per-video profiles most relevant to the topic.
-
-    Returns formatted string of retrieved examples for prompt injection.
-    """
-    if retriever is None:
-        return "No examples available (ChromaDB not populated)."
-
+def load_multimodal_stats() -> dict:
+    """Median speech rate and visual style across Module 2's analysed videos."""
+    if not QDRANT_SNAPSHOT_PATH.exists():
+        return {}
     try:
-        query = f"content style hook tone pacing structure for topic: {topic}"
-        docs = retriever.invoke(query)
+        with open(QDRANT_SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+            payloads = [p.get("payload") or {} for p in json.load(f).get("points", [])]
+    except (OSError, ValueError):
+        return {}
 
-        if not docs:
-            return "No relevant examples found in creator's content library."
+    def median_of(key: str) -> float | None:
+        values = []
+        for p in payloads:
+            try:
+                values.append(float(p[key]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return statistics.median(values) if values else None
 
-        parts = []
-        for i, doc in enumerate(docs, 1):
-            parts.append(f"--- Example {i} ---\n{doc.page_content}")
-        return "\n\n".join(parts)
+    return {key: median_of(key)
+            for key in ("speech_rate_wpm", "talking_head_pct", "avg_shot_duration")}
 
-    except Exception as e:
-        return f"Retrieval failed: {e}"
 
+def _words(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9']+", text)
+
+
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if _words(s)]
+
+
+def style_features(text: str) -> dict:
+    """Measurable voice markers: sentence length, 'you'-address, questions."""
+    words = _words(text)
+    sentences = _sentences(text)
+    n_words, n_sentences = max(len(words), 1), max(len(sentences), 1)
+    return {
+        "avg_sentence_words": len(words) / n_sentences,
+        "you_ratio": sum(w.lower() in YOU_WORDS for w in words) / n_words,
+        "question_ratio": sum(s.rstrip().endswith("?") for s in sentences) / n_sentences,
+    }
+
+
+def build_style_baseline(examples: list[dict], multimodal: dict) -> dict:
+    """What the creator sounds like, measured from their transcripts."""
+    wpm = multimodal.get("speech_rate_wpm")
+    baseline = {
+        "wpm": round(wpm or DEFAULT_WPM),
+        "wpm_source": "module2_audio" if wpm else "default",
+        "word_budget": round((wpm or DEFAULT_WPM) * SCRIPT_DURATION_S / 60),
+        "talking_head_pct": multimodal.get("talking_head_pct"),
+        "avg_shot_duration": multimodal.get("avg_shot_duration"),
+        "measured_style": bool(examples),
+        "transcripts": len(examples),
+        "baseline_words": sum(len(_words(e["transcript"])) for e in examples),
+    }
+    baseline["low_confidence"] = baseline["baseline_words"] < MIN_BASELINE_WORDS
+    if examples:
+        baseline.update(style_features(" ".join(e["transcript"] for e in examples)))
+    return baseline
+
+
+def usable_for_style(example: dict) -> bool:
+    """
+    A transcript represents the creator's own phrasing only if it was spoken
+    in English (Whisper's translation of e.g. a Hindi vlog is machine wording)
+    and is long enough to show sentence patterns. Unknown language (ChromaDB
+    built before languages were stored) is kept.
+    """
+    language = example.get("language", "")
+    return (len(_words(example["transcript"])) >= MIN_TRANSCRIPT_WORDS
+            and (not language or language == STYLE_LANGUAGE))
+
+
+def prepare_context(profile: dict | None = None) -> dict:
+    """Load everything the scripting modes need, once per request."""
+    profile = profile or _load_creator_profile()
+    all_examples = load_creator_examples()
+    examples = [e for e in all_examples if usable_for_style(e)]
+    baseline = build_style_baseline(examples, load_multimodal_stats())
+    baseline["transcripts_excluded"] = len(all_examples) - len(examples)
+    print(f"[ScriptingAgent] Context: {len(examples)} usable transcripts "
+          f"({baseline['transcripts_excluded']} excluded: non-English or too short), "
+          f"{baseline['baseline_words']} words{' — LOW CONFIDENCE' if baseline['low_confidence'] else ''}, "
+          f"{baseline['wpm']} wpm ({baseline['wpm_source']}), budget {baseline['word_budget']} words")
+    return {"profile": profile, "examples": examples, "baseline": baseline}
+
+
+# ─── [2] Retrieval ─────────────────────────────────────────────────────────────
+
+def retrieve_examples(examples: list[dict], topic: str, k: int = RAG_TOP_K) -> list[dict]:
+    """Top-k past transcripts most similar to the topic (MiniLM cosine)."""
+    if len(examples) <= k:
+        return examples
+    vectors = embed_texts([f"{e['topic']}. {e['transcript'][:500]}" for e in examples])
+    query = embed_texts([topic])[0]
+    order = np.argsort(-(vectors @ query))[:k]
+    return [examples[i] for i in order]
+
+
+# ─── [3] Prompting + Generation ────────────────────────────────────────────────
 
 def _format_creator_profile(profile: dict) -> str:
-    """
-    Format the creator profile dict as a readable string for prompt injection.
-    """
+    """Format the creator profile dict as a readable string for prompt injection."""
     if not profile:
         return "No creator profile available."
-
-    lines = []
-    if profile.get("creator_niche"):
-        lines.append(f"Niche: {profile['creator_niche']}")
-    if profile.get("dominant_tone"):
-        lines.append(f"Tone: {profile['dominant_tone']}")
-    if profile.get("avg_pacing"):
-        lines.append(f"Pacing: {profile['avg_pacing']}")
-    if profile.get("typical_structure"):
-        lines.append(f"Typical structure: {profile['typical_structure']}")
-    if profile.get("target_audience"):
-        lines.append(f"Target audience: {profile['target_audience']}")
-    if profile.get("signature_hooks"):
-        lines.append(f"Signature hooks: {', '.join(profile['signature_hooks'])}")
-    if profile.get("recurring_topics"):
-        lines.append(f"Recurring topics: {', '.join(profile['recurring_topics'][:5])}")
-    if profile.get("content_style_summary"):
-        lines.append(f"Style summary: {profile['content_style_summary']}")
-
-    return "\n".join(lines)
+    fields = [
+        ("Niche", profile.get("creator_niche")),
+        ("Tone", profile.get("dominant_tone")),
+        ("Pacing", profile.get("avg_pacing")),
+        ("Typical structure", profile.get("typical_structure")),
+        ("Target audience", profile.get("target_audience")),
+        ("Signature hooks", ", ".join(profile.get("signature_hooks", []))),
+        ("Recurring topics", ", ".join(profile.get("recurring_topics", [])[:5])),
+        ("Style summary", profile.get("content_style_summary")),
+    ]
+    return "\n".join(f"{name}: {value}" for name, value in fields if value)
 
 
 def _extract_style_params(creator_profile: dict) -> dict:
     """
-    Extract the key style parameters used across all script prompts.
-
-    These ensure all three modes use the same hook_type and structure
-    for a fair ablation comparison.
+    Key style parameters shared by all modes, so the ablation compares
+    like with like (same hook type and structure in every mode).
     """
-    hooks = creator_profile.get("signature_hooks", [])
-    hook_type = hooks[0] if hooks else "Bold Claim"
-
+    hooks = known_hooks(creator_profile.get("signature_hooks", []))
     return {
-        "hook_type": hook_type,
+        "hook_type": hooks[0] if hooks else "Bold Claim",
         "structure": creator_profile.get("typical_structure", "Hook → Problem → Solution"),
         "tone": creator_profile.get("dominant_tone", "Conversational"),
         "pacing": creator_profile.get("avg_pacing", "Fast-paced"),
@@ -463,271 +300,518 @@ def _extract_style_params(creator_profile: dict) -> dict:
     }
 
 
-def _parse_script_response(raw: dict) -> ScriptOutput:
-    """
-    Parse and validate LLM JSON response into a ScriptOutput Pydantic model.
+def _trend_context(trend: dict | None) -> str:
+    if not trend:
+        return ""
+    lines = []
+    if trend.get("why_trending"):
+        lines.append(f"Why it is trending: {trend['why_trending']}")
+    if trend.get("suggested_angle"):
+        lines.append(f"Suggested angle (advice for you as the writer — never say it on camera): "
+                     f"{trend['suggested_angle']}")
+    # Evidence video titles are deliberately left out: small models copy them
+    # (hashtags and emoji included) instead of writing new lines.
+    return "TREND CONTEXT:\n" + "\n".join(lines) + "\n\n" if lines else ""
 
-    Applies defensive defaults for any missing fields so parsing never
-    crashes the pipeline — a malformed LLM response degrades gracefully.
-    """
-    raw.setdefault("script_id", 1)
-    raw.setdefault("concept_name", "Untitled Script")
-    raw.setdefault("hook_type", "Bold Claim")
-    raw.setdefault("scenes", [])
 
-    # Ensure scenes is a list and each scene has required fields
+def _hook_instruction(hook_type: str) -> str:
+    guide = HOOK_GUIDE.get(hook_type.lower())
+    how = f" ({guide})" if guide else ""
+    return (f"HOOK: scene 1 is a {hook_type} hook{how}. Write the actual opening sentence — "
+            f"do not write the words '{hook_type}' or 'hook'.\n")
+
+
+def _style_targets(baseline: dict) -> str:
+    """
+    The creator's measured voice as explicit targets. Examples alone do not
+    transfer sentence length (measured in the ablation), numbers do.
+    """
+    you = baseline["you_ratio"]
+    questions = baseline["question_ratio"]
+    address = ("talks straight to the viewer ('you', 'your') a lot" if you >= 0.05 else
+               "sometimes addresses the viewer as 'you'" if you >= 0.02 else
+               "rarely says 'you'")
+    asks = ("asks the viewer questions often" if questions >= 0.2 else
+            "asks an occasional question" if questions >= 0.05 else
+            "almost never asks questions (outside the hook)")
+    return (f"VOICE TARGETS (measured from this creator's videos): sentences average "
+            f"~{baseline['avg_sentence_words']:.0f} words — keep yours that short; "
+            f"this creator {address}, and {asks}.")
+
+
+def _creator_context(profile: dict, baseline: dict, examples: list[dict]) -> str:
+    parts = [f"CREATOR PROFILE:\n{_format_creator_profile(profile)}",
+             f"LENGTH: about {baseline['word_budget']} spoken words in total "
+             f"(this creator speaks ~{baseline['wpm']} words per minute; 30 seconds)."]
+    if baseline.get("measured_style"):
+        parts.append(_style_targets(baseline))
+    if baseline.get("talking_head_pct") is not None:
+        shot = baseline.get("avg_shot_duration")
+        parts.append(f"VISUAL STYLE: {baseline['talking_head_pct']:.0%} talking head"
+                     + (f", cuts every ~{shot:.1f} s" if shot else "")
+                     + " — write clip_ideas to match.")
+    if examples:
+        shots = "\n\n".join(
+            f"--- Example {i} (topic: {e['topic']}) ---\n{e['transcript'][:EXAMPLE_MAX_CHARS]}"
+            for i, e in enumerate(examples, 1))
+        parts.append("HOW THIS CREATOR ACTUALLY TALKS (real transcripts — copy the voice: "
+                     f"sentence length, phrasing, energy; NOT the content):\n{shots}")
+    return "\n\n".join(parts) + "\n\n"
+
+
+# Fixed scene timing (seconds). Small models follow a filled-in skeleton far
+# better than a list of rules, so the prompt hands them these slots.
+SCENE_SLOTS = [(0, 3, "hook"), (3, 9, "setup"), (9, 16, "main point"),
+               (16, 23, "example or proof"), (23, 30, "takeaway")]
+
+
+def _output_spec(wpm: int) -> str:
+    """JSON skeleton with fixed timecodes and per-scene word targets."""
     scenes = []
-    for i, scene in enumerate(raw.get("scenes", []), start=1):
+    for start, end, role in SCENE_SLOTS:
+        words = max(4, round((end - start) * wpm / 60))
+        if role == "hook":
+            words = min(words, MAX_HOOK_WORDS)
+        scenes.append(
+            f'    {{"timecode": "0:{start:02d}-0:{end:02d}", "clip_idea": "...", '
+            f'"caption": "...", "voiceover": "..."}}   <- {role}: about {words} spoken words')
+    return (
+        f"Fill in this JSON skeleton. Keep all {SCENE_COUNT} scenes and their timecodes exactly; "
+        "replace every ... with real content.\n"
+        '{"concept_name": "...", "scenes": [\n' + ",\n".join(scenes) + "\n]}\n"
+        f"caption = on-screen text, at most {MAX_CAPTION_WORDS} words. "
+        "clip_idea = what the viewer sees. voiceover = the exact spoken words.\n"
+        "Return only the JSON (without the <- notes)."
+    )
+
+
+def build_prompt(mode: str, topic: str, hook_type: str, structure: str, profile: dict,
+                 baseline: dict, examples: list[dict], trend: dict | None = None,
+                 feedback: list[str] | None = None, previous: ScriptOutput | None = None) -> str:
+    """Prompt for one generation. Only non-baseline modes see creator context."""
+    prompt = (
+        "You write 30-second short-form video scripts (YouTube Shorts / Reels).\n\n"
+        f"TOPIC: {topic}\n"
+        + _hook_instruction(hook_type)
+        + f"STRUCTURE: {structure}\n\n"
+        + _trend_context(trend)
+    )
+    if mode != "no_history":
+        prompt += _creator_context(profile, baseline, examples)
+    if feedback and previous is not None:
+        draft = "\n".join(f"{s.timecode}: {s.voiceover}" for s in previous.scenes)
+        prompt += ("YOUR PREVIOUS DRAFT:\n" + draft + "\n\n"
+                   "FIX THESE MEASURED PROBLEMS (keep what already works):\n"
+                   + "\n".join(f"- {f}" for f in feedback) + "\n\n")
+    # The baseline mode only knows "30 seconds" (generic speech rate); the
+    # other modes get the creator's measured words-per-minute.
+    return prompt + _output_spec(DEFAULT_WPM if mode == "no_history" else baseline["wpm"])
+
+
+def _clean_spoken(text: str) -> str:
+    """Hashtags and emoji can't be spoken — remove them from a voiceover."""
+    text = re.sub(r"#\w+", " ", text)
+    text = re.sub(r"[^\w\s'’,.!?;:\-–—…\"]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_script_response(raw: dict, script_id: int = 1, hook_type: str | None = None) -> ScriptOutput:
+    """
+    Parse and validate the LLM's JSON into a ScriptOutput. Missing fields get
+    defaults; hashtags/emoji are stripped from the spoken voiceover; scenes
+    with no spoken words (truncation or an echoed "...") are dropped.
+    """
+    scenes = []
+    for i, scene in enumerate(raw.get("scenes") or [], start=1):
         if not isinstance(scene, dict):
             continue
-        voiceover = scene.get("voiceover", "").strip()
-        caption = scene.get("caption", "").strip()
-        # Skip scenes with empty voiceover — they indicate LLM truncation
-        if not voiceover:
-            print(f"[ScriptingAgent] Skipping scene {i} — empty voiceover (LLM truncation)")
+        voiceover = _clean_spoken(str(scene.get("voiceover") or ""))
+        if not _words(voiceover):
             continue
         scenes.append(SceneOutput(
-            timecode=scene.get("timecode", f"0:{(i-1)*6:02d}-0:{i*6:02d}"),
-            clip_idea=scene.get("clip_idea", "Visual placeholder"),
-            caption=caption,
+            timecode=str(scene.get("timecode") or f"0:{(i - 1) * 6:02d}-0:{i * 6:02d}"),
+            clip_idea=str(scene.get("clip_idea") or "Visual placeholder"),
+            caption=str(scene.get("caption") or "").strip(),
             voiceover=voiceover,
         ))
-
     return ScriptOutput(
-        script_id=raw["script_id"],
-        concept_name=raw["concept_name"],
-        hook_type=raw["hook_type"],
+        script_id=script_id,
+        concept_name=str(raw.get("concept_name") or "Untitled Script"),
+        hook_type=hook_type or str(raw.get("hook_type") or "Bold Claim"),
         scenes=scenes,
     )
 
 
-def _call_llm(llm: ChatGroq, prompt_template: str, variables: dict) -> dict:
-    """
-    Run a prompt template through the LLM and return parsed JSON dict.
+def _script_model() -> str | None:
+    """Optional bigger model for scripting (must belong to LLM_PROVIDER)."""
+    return os.getenv("SCRIPT_MODEL") or None
 
-    Retries once on JSON parse failure (LLM occasionally wraps JSON
-    in markdown code blocks despite explicit instructions not to).
-    """
-    prompt = ChatPromptTemplate.from_template(prompt_template)
-    parser = JsonOutputParser()
-    chain = prompt | llm | parser
 
+def generate_script(prompt: str, script_id: int, hook_type: str) -> ScriptOutput:
+    """
+    One LLM generation with a single repair retry if the output is unusable.
+
+    Raises:
+        LocalLLMError: LLM unreachable, or two unusable answers in a row.
+    """
+    problem = ""
+    for attempt in range(2):
+        text = prompt if attempt == 0 else (
+            f"{prompt}\n\nYour previous answer was unusable ({problem}). "
+            f"Return valid JSON with exactly {SCENE_COUNT} scenes.")
+        raw = chat_json(text, temperature=GEN_TEMPERATURE, max_tokens=GEN_MAX_TOKENS,
+                        model=_script_model())
+        script = _parse_script_response(raw, script_id, hook_type)
+        if len(script.scenes) >= 3:
+            return script
+        problem = f"only {len(script.scenes)} scenes with a voiceover"
+    raise LocalLLMError(f"Script generation failed twice: {problem}")
+
+
+# ─── [4] Evaluation ────────────────────────────────────────────────────────────
+
+def _closeness(value: float, target: float, tolerance: float) -> float:
+    """1.0 at target, falling linearly to 0.0 at ±tolerance."""
+    return max(0.0, 1.0 - abs(value - target) / tolerance) if tolerance > 0 else float(value == target)
+
+
+def score_style(text: str, baseline: dict) -> tuple[float | None, list[str], dict]:
+    """
+    Stylometric match vs the creator's real transcripts. None when there are
+    no transcripts to compare against (reported, never guessed).
+    """
+    features = style_features(text)
+    if not baseline.get("measured_style"):
+        return None, [], features
+
+    b_len, b_you, b_q = (baseline["avg_sentence_words"], baseline["you_ratio"],
+                         baseline["question_ratio"])
+    closeness = {
+        "length": _closeness(features["avg_sentence_words"], b_len, b_len),
+        "you": _closeness(features["you_ratio"], b_you, max(b_you, 0.03)),
+        "questions": _closeness(features["question_ratio"], b_q, max(b_q, 0.15)),
+    }
+    feedback = []
+    if closeness["length"] < STYLE_FEEDBACK_BELOW:
+        direction = "shorter" if features["avg_sentence_words"] > b_len else "longer"
+        feedback.append(f"Average sentence is {features['avg_sentence_words']:.0f} words; this creator "
+                        f"averages {b_len:.0f}. Use {direction} sentences.")
+    if closeness["you"] < STYLE_FEEDBACK_BELOW:
+        feedback.append(f"'You'-words are {features['you_ratio']:.0%} of the script vs {b_you:.0%} "
+                        "in the creator's videos. Match how directly they address the viewer.")
+    if closeness["questions"] < STYLE_FEEDBACK_BELOW:
+        feedback.append(f"{features['question_ratio']:.0%} of sentences are questions vs {b_q:.0%} "
+                        "for this creator.")
+    return round(10 * statistics.mean(closeness.values()), 1), feedback, features
+
+
+def score_timing(word_count: int, budget: int, wpm: int) -> tuple[float, list[str]]:
+    """Full marks within ±15% of the word budget, 0 at ±60%."""
+    deviation = abs(word_count / max(budget, 1) - 1)
+    score = 10.0 if deviation <= 0.15 else max(0.0, 10 * (1 - (deviation - 0.15) / 0.45))
+    feedback = []
+    if deviation > 0.15:
+        verb, diff = ("Cut", word_count - budget) if word_count > budget else ("Add", budget - word_count)
+        feedback.append(f"Voiceover is {word_count} words; at {wpm} words/min 30 seconds is about "
+                        f"{budget}. {verb} about {diff} words.")
+    return round(score, 1), feedback
+
+
+def _parse_timecode(timecode: str) -> tuple[int, int] | None:
+    match = re.search(r"(\d+):(\d{1,2})\s*[-–—]\s*(\d+):(\d{1,2})", timecode)
+    if not match:
+        return None
+    m1, s1, m2, s2 = (int(g) for g in match.groups())
+    return m1 * 60 + s1, m2 * 60 + s2
+
+
+def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
+    return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
+
+
+def copied_phrases(text: str, transcripts: list[str]) -> list[str]:
+    """COPY_NGRAM-word runs of `text` that appear verbatim in a past transcript."""
+    source: set[tuple[str, ...]] = set()
+    for t in transcripts:
+        source |= _ngrams([w.lower() for w in _words(t)], COPY_NGRAM)
+    words = [w.lower() for w in _words(text)]
+    return [" ".join(words[i:i + COPY_NGRAM]) for i in range(len(words) - COPY_NGRAM + 1)
+            if tuple(words[i:i + COPY_NGRAM]) in source]
+
+
+def repeated_scenes(scenes: list[SceneOutput]) -> list[int]:
+    """1-based numbers of scenes that mostly repeat an earlier scene."""
+    word_sets = [{w.lower() for w in _words(s.voiceover)} for s in scenes]
+    repeats = []
+    for j in range(1, len(word_sets)):
+        for i in range(j):
+            union = word_sets[i] | word_sets[j]
+            if union and len(word_sets[i] & word_sets[j]) / len(union) >= REPEAT_SIMILARITY:
+                repeats.append(j + 1)
+                break
+    return repeats
+
+
+def score_structure(script: ScriptOutput, transcripts: list[str] | None = None) -> tuple[float, list[str]]:
+    """
+    Eight pass/fail checks → 0-10: format (scenes, timecodes, length of hook,
+    captions, scenes) plus originality — no scene repeating another and no
+    word-for-word copying from the creator's past transcripts (small models
+    otherwise paste the few-shot examples).
+    """
+    scenes = script.scenes
+    spans = [_parse_timecode(s.timecode) for s in scenes]
+    hook_words = len(_words(scenes[0].voiceover)) if scenes else 0
+    long_captions = [s.caption for s in scenes if len(_words(s.caption)) > MAX_CAPTION_WORDS]
+    thin_scenes = [i for i, s in enumerate(scenes, 1) if len(_words(s.voiceover)) < MIN_SCENE_WORDS]
+    ordered = (bool(spans) and all(spans)
+               and all(start < end for start, end in spans)
+               and all(a[0] <= b[0] for a, b in zip(spans, spans[1:])))
+    ends_at = spans[-1][1] if spans and spans[-1] else 0
+    repeats = repeated_scenes(scenes)
+    copied = copied_phrases(" ".join(s.voiceover for s in scenes), transcripts or [])
+
+    checks = [
+        (len(scenes) == SCENE_COUNT, f"Use exactly {SCENE_COUNT} scenes (got {len(scenes)})."),
+        (ordered, "Timecodes must be valid (m:ss-m:ss) and in order."),
+        (abs(ends_at - SCRIPT_DURATION_S) <= 5, f"Last scene should end near 0:30 (ends at {ends_at} s)."),
+        (MIN_HOOK_WORDS <= hook_words <= MAX_HOOK_WORDS,
+         f"Hook (scene 1) is {hook_words} words; write a full opening sentence of "
+         f"{MIN_HOOK_WORDS}-{MAX_HOOK_WORDS} words."),
+        (not long_captions, f"Captions must be {MAX_CAPTION_WORDS} words or fewer "
+                            f"({len(long_captions)} are longer)."),
+        (not thin_scenes, f"Scenes {', '.join(map(str, thin_scenes))} have under {MIN_SCENE_WORDS} spoken "
+                          "words; every scene needs a real spoken sentence."),
+        (not repeats, f"Scenes {', '.join(map(str, repeats))} repeat an earlier scene; "
+                      "every scene must say something new."),
+        (not copied, f"The script copies the creator's past videos word for word "
+                     f"(e.g. '{copied[0] if copied else ''}'). Write new lines in their style."),
+    ]
+    passed = sum(ok for ok, _ in checks)
+    return round(10 * passed / len(checks), 1), [msg for ok, msg in checks if not ok]
+
+
+# 5-level answers: finer than yes/partly/no, which scored every decent hook 8.8.
+_RUBRIC_VALUE = {"yes": 1.0, "mostly": 0.75, "partly": 0.5, "slightly": 0.25, "no": 0.0}
+_RUBRIC_QUESTIONS = [
+    "Would a viewer feel they must keep watching (open loop, tension or surprise)?",
+    "Is it specific to this topic, not a line that could open any video?",
+    "Does it contain a concrete detail (a number, a named thing, a vivid image or a personal moment)?",
+    "Does it promise the viewer a clear benefit or answer?",
+    "Is it clearly a '{hook_type}' hook?",
+    "Can it be said in about 3 seconds and understood on first hearing?",
+]
+
+
+def _ask_judge(hook: str, hook_type: str, topic: str) -> tuple[float, str]:
+    """
+    One rubric call: 6 questions answered on a 5-level scale → 0-10, plus an
+    improvement tip. Validated on graded example hooks (bad / generic / strong):
+    means 1.1 / 2.8 / 9.2, vs 1.7 / 4.6 / 9.2 for the earlier 4×3 rubric.
+
+    Raises:
+        LocalLLMError: judge unreachable or answers not in the rubric.
+    """
+    keys = [f"q{i}" for i in range(1, len(_RUBRIC_QUESTIONS) + 1)]
+    questions = "\n".join(f"{k}: {q.format(hook_type=hook_type)}" for k, q in zip(keys, _RUBRIC_QUESTIONS))
+    prompt = (
+        "You judge the opening line (hook) of a 30-second short-form video.\n"
+        f"Topic: {topic}\nIntended hook type: {hook_type}\nHook: \"{hook}\"\n\n"
+        f"Answer each question with one of: {', '.join(_RUBRIC_VALUE)}.\n{questions}\n"
+        "improve: one sentence on how to make this hook stronger.\n"
+        "Return JSON: {" + ", ".join(f'"{k}": "..."' for k in keys) + ', "improve": "..."}'
+    )
+    result = chat_json(prompt, temperature=0.0, max_tokens=400, model=_script_model())
+    answers = [_RUBRIC_VALUE.get(str(result.get(k, "")).strip().lower()) for k in keys]
+    if any(a is None for a in answers):
+        raise LocalLLMError(f"Judge answers outside the rubric: {result}")
+    return round(10 * statistics.mean(answers), 1), str(result.get("improve", "")).strip()
+
+
+# Calibration control: a deliberately weak, generic hook. A judge that rates
+# it CONTROL_MAX_SCORE or higher can't tell good from bad, so its scores are
+# not used. Checked once per model per process.
+CONTROL_HOOK = "This video is about life and some things about it."
+CONTROL_MAX_SCORE = 5.0
+_judge_reliability: dict[str, bool] = {}
+
+
+def judge_is_reliable() -> bool:
+    key = _script_model() or f"{os.getenv('LLM_PROVIDER', 'ollama')}:{os.getenv('OLLAMA_MODEL', '')}"
+    if key not in _judge_reliability:
+        try:
+            control_score, _ = _ask_judge(CONTROL_HOOK, "Curiosity Gap", "Living a better life")
+            reliable = control_score < CONTROL_MAX_SCORE
+            print(f"[ScriptingAgent] Hook judge calibration: control hook scored {control_score} → "
+                  f"{'reliable' if reliable else 'UNRELIABLE, hook_strength will be n/a'}")
+        except LocalLLMError as e:
+            print(f"[ScriptingAgent] Hook judge calibration failed: {e}")
+            reliable = False
+        _judge_reliability[key] = reliable
+    return _judge_reliability[key]
+
+
+def judge_hook(hook: str, hook_type: str, topic: str) -> tuple[float | None, list[str]]:
+    """
+    LLM judge with a fixed 6-question rubric (5 levels → 0-10) — the
+    only subjective metric. None when the judge is unavailable or fails the
+    calibration control. A hook shorter than MIN_HOOK_WORDS scores 0 without
+    asking: small judge models rate even a single word like "Contrarian" highly.
+    """
+    if len(_words(hook)) < MIN_HOOK_WORDS:
+        return 0.0, [f"Hook: write a real opening sentence, not '{hook}'."]
+    if not judge_is_reliable():
+        return None, []
     try:
-        return chain.invoke(variables)
-    except Exception as e:
-        # If JSON parsing failed, try extracting JSON manually
-        raise RuntimeError(f"LLM call failed: {e}") from e
+        score, improve = _ask_judge(hook, hook_type, topic)
+    except LocalLLMError as e:
+        print(f"[ScriptingAgent] Hook judge unavailable: {e}")
+        return None, []
+    # Small models sometimes echo the placeholder instead of answering
+    useful = len(_words(improve)) >= 3 and "one sentence" not in improve.lower()
+    return score, ([f"Hook: {improve}"] if useful and score < 10 else [])
 
 
-# ─── Three Script Generation Modes ────────────────────────────────────────────
-
-def generate_no_history(
-    topic: str,
-    style_params: dict,
-    llm: ChatGroq,
-) -> tuple[ScriptOutput, dict]:
+def evaluate_script(script: ScriptOutput, baseline: dict, topic: str,
+                    transcripts: list[str] | None = None) -> dict:
     """
-    Mode 1: Generate script with NO creator context.
-
-    Single LLM call. No RAG retrieval. No creator profile injection.
-    Uses hook_type and structure from creator profile to ensure fair
-    comparison (we're testing context quality, not hook variety).
-
-    Args:
-        topic:        Trending topic from research_output.
-        style_params: Hook type + structure from creator profile.
-        llm:          Initialised ChatGroq instance.
-
-    Returns:
-        Tuple of (ScriptOutput, metadata_dict).
-        metadata_dict contains mode, llm_calls_made, evaluator_scores.
+    Score a script on the four metrics; same evaluator for every mode.
+    `transcripts` (the creator's past videos) are used for the copy check.
     """
-    print(f"\n[ScriptingAgent] Mode 1: no_history")
+    voiceover = " ".join(s.voiceover for s in script.scenes)
+    word_count = len(_words(voiceover))
 
-    raw = _call_llm(llm, NO_HISTORY_PROMPT, {
-        "topic": topic,
-        "hook_type": style_params["hook_type"],
-        "structure": style_params["structure"],
-    })
+    # Style is measured on the body (scenes 2+): the hook's form is set by the
+    # requested hook type (a Curiosity Gap is often a question), not by voice.
+    body = " ".join(s.voiceover for s in script.scenes[1:]) or voiceover
+    style, style_fb, features = score_style(body, baseline)
+    timing, timing_fb = score_timing(word_count, baseline["word_budget"], baseline["wpm"])
+    structure, structure_fb = score_structure(script, transcripts)
+    hook = script.scenes[0].voiceover if script.scenes else ""
+    hook_strength, hook_fb = judge_hook(hook, script.hook_type, topic)
 
-    script = _parse_script_response(raw)
-    print(f"[ScriptingAgent] no_history → '{script.concept_name}'")
-
-    return script, {
-        "mode": "no_history",
-        "llm_calls": 1,
-        "evaluator_scores": None,
-        "regen_triggered": False,
+    available = [s for s in (style, timing, structure, hook_strength) if s is not None]
+    return {
+        "style_match": style,
+        "timing": timing,
+        "structure": structure,
+        "hook_strength": hook_strength,
+        "overall": round(statistics.mean(available), 2),
+        # Copied or repeated content never passes, whatever the overall score
+        "original": not (repeated_scenes(script.scenes) or copied_phrases(voiceover, transcripts or [])),
+        "feedback": timing_fb + structure_fb + style_fb + hook_fb,
+        "measured": {"word_count": word_count, **{k: round(v, 3) for k, v in features.items()}},
     }
 
 
-def generate_retrieval_only(
-    topic: str,
-    style_params: dict,
-    creator_profile: dict,
-    retrieved_examples: str,
-    llm: ChatGroq,
-) -> tuple[ScriptOutput, dict]:
+# ─── [5] Modes ─────────────────────────────────────────────────────────────────
+
+def run_mode(mode: str, topic: str, context: dict, examples: list[dict], hook_type: str,
+             trend: dict | None = None, script_id: int = 1) -> tuple[ScriptOutput, dict]:
     """
-    Mode 2: Generate script WITH RAG context, no evaluator feedback loop.
+    Generate (and for full_pipeline, refine) one script in the given mode.
+    Every mode is evaluated, so scores are comparable across modes.
 
-    Injects:
-      - Per-video examples from ChromaDB (few-shot demonstrations)
-      - Full creator profile as style guide
-
-    Args:
-        topic:              Trending topic.
-        style_params:       Hook/structure/tone/pacing/audience.
-        creator_profile:    Dict from creator_profile.json.
-        retrieved_examples: Formatted string of ChromaDB retrieved docs.
-        llm:                ChatGroq instance.
-
-    Returns:
-        Tuple of (ScriptOutput, metadata_dict).
+    Raises:
+        LocalLLMError: the LLM could not produce a usable script.
     """
-    print(f"\n[ScriptingAgent] Mode 2: retrieval_only")
+    if mode not in MODES:
+        raise ValueError(f"Unknown scripting mode: {mode}")
+    profile, baseline = context["profile"], context["baseline"]
+    structure = _extract_style_params(profile)["structure"]
+    shots = examples if mode != "no_history" else []
+    transcripts = [e["transcript"] for e in context["examples"]]
 
-    raw = _call_llm(llm, RETRIEVAL_PROMPT, {
-        "topic": topic,
-        "creator_profile": _format_creator_profile(creator_profile),
-        "retrieved_examples": retrieved_examples,
-        **style_params,
-    })
+    def attempt(feedback=None, previous=None) -> tuple[ScriptOutput, dict]:
+        prompt = build_prompt(mode, topic, hook_type, structure, profile, baseline, shots,
+                              trend, feedback, previous)
+        script = generate_script(prompt, script_id, hook_type)
+        return script, evaluate_script(script, baseline, topic, transcripts)
 
-    script = _parse_script_response(raw)
-    print(f"[ScriptingAgent] retrieval_only → '{script.concept_name}'")
+    script, scores = attempt()
+    history = [{"attempt": 1, **scores}]
+    best_script, best_scores = script, scores
 
-    return script, {
-        "mode": "retrieval_only",
-        "llm_calls": 1,
-        "evaluator_scores": None,
-        "regen_triggered": False,
-    }
+    if mode == "full_pipeline":
+        def weakest(s: dict) -> float:
+            return min(v for k in METRICS if (v := s[k]) is not None)
 
+        def passes(s: dict) -> bool:
+            # a high average must not hide one bad metric (e.g. style 1.8)
+            return s["overall"] >= REGEN_THRESHOLD and weakest(s) >= MIN_METRIC_SCORE and s["original"]
 
-def generate_full_pipeline(
-    topic: str,
-    style_params: dict,
-    creator_profile: dict,
-    retrieved_examples: str,
-    llm: ChatGroq,
-) -> tuple[ScriptOutput, dict]:
-    """
-    Mode 3: Generate script WITH RAG context AND evaluator feedback loop.
+        def rank(s: dict) -> tuple:   # an original script always beats a copied one
+            return s["original"], s["overall"]
 
-    Steps:
-      1. Generate initial script (same as retrieval_only).
-      2. Evaluate with LLM evaluator — scores style_match, hook_strength,
-         structure_adherence, and gives actionable feedback.
-      3. If overall score < REGEN_THRESHOLD (7.0), regenerate with feedback
-         injected into the prompt.
-      4. Repeat up to MAX_REGEN_ATTEMPTS (2) times.
-      5. Return the best-scoring version.
+        while not passes(scores) and len(history) <= MAX_REGEN_ATTEMPTS and scores["feedback"]:
+            reason = ("copied/repeated content" if not scores["original"] else
+                      f"overall {scores['overall']}, weakest metric {weakest(scores)}")
+            print(f"[ScriptingAgent] {hook_type}: {reason} — rewriting with {len(scores['feedback'])} fixes")
+            script, scores = attempt(scores["feedback"], script)
+            history.append({"attempt": len(history) + 1, **scores})
+            if rank(scores) > rank(best_scores):
+                best_script, best_scores = script, scores
 
-    Args:
-        topic:              Trending topic.
-        style_params:       Hook/structure/tone/pacing/audience.
-        creator_profile:    Dict from creator_profile.json.
-        retrieved_examples: Formatted string of ChromaDB retrieved docs.
-        llm:                ChatGroq instance (same model for gen + eval).
-
-    Returns:
-        Tuple of (ScriptOutput, metadata_dict) where metadata includes
-        all evaluator scores and whether regeneration was triggered.
-    """
-    print(f"\n[ScriptingAgent] Mode 3: full_pipeline")
-
-    profile_str = _format_creator_profile(creator_profile)
-    regen_triggered = False
-    all_scores = []
-
-    # ── Step 1: Initial generation (same as retrieval_only) ───────────────────
-    raw = _call_llm(llm, RETRIEVAL_PROMPT, {
-        "topic": topic,
-        "creator_profile": profile_str,
-        "retrieved_examples": retrieved_examples,
-        **style_params,
-    })
-    current_script = _parse_script_response(raw)
-    print(f"[ScriptingAgent] Initial generation → '{current_script.concept_name}'")
-
-    # ── Step 2: Evaluate ──────────────────────────────────────────────────────
-    for attempt in range(MAX_REGEN_ATTEMPTS + 1):
-        time.sleep(1.5)  # Rate limit guard between LLM calls
-
-        try:
-            scores = _call_llm(llm, EVALUATOR_PROMPT, {
-                "creator_profile": profile_str,
-                "script": current_script.model_dump_json(indent=2),
-                "structure": style_params["structure"],
-            })
-        except Exception as e:
-            print(f"[ScriptingAgent] Evaluator failed (attempt {attempt+1}): {e}")
-            scores = {
-                "style_match": 5, "hook_strength": 5,
-                "structure_adherence": 5, "overall": 5.0,
-                "feedback": "Evaluator unavailable",
-            }
-
-        # Ensure overall is float
-        scores.setdefault("overall", (
-            scores.get("style_match", 5) +
-            scores.get("hook_strength", 5) +
-            scores.get("structure_adherence", 5)
-        ) / 3)
-        scores["attempt"] = attempt + 1
-        all_scores.append(scores)
-
-        overall = float(scores.get("overall", 0))
-        print(f"[ScriptingAgent] Evaluator score (attempt {attempt+1}): "
-              f"style={scores.get('style_match')}, "
-              f"hook={scores.get('hook_strength')}, "
-              f"structure={scores.get('structure_adherence')}, "
-              f"overall={overall:.1f}")
-
-        # ── Step 3: Decide whether to regenerate ──────────────────────────
-        if overall >= REGEN_THRESHOLD:
-            print(f"[ScriptingAgent] Score {overall:.1f} >= {REGEN_THRESHOLD} "
-                  f"— accepting script")
-            break
-
-        if attempt >= MAX_REGEN_ATTEMPTS:
-            print(f"[ScriptingAgent] Max regen attempts reached — "
-                  f"accepting best available (score={overall:.1f})")
-            break
-
-        # ── Step 4: Regenerate with feedback ──────────────────────────────
-        regen_triggered = True
-        feedback = scores.get("feedback", "Improve style alignment and hook strength.")
-        print(f"[ScriptingAgent] Score {overall:.1f} < {REGEN_THRESHOLD} — "
-              f"regenerating with feedback: '{feedback[:80]}...'")
-
-        time.sleep(1.5)  # Rate limit guard
-        try:
-            raw = _call_llm(llm, REGEN_PROMPT, {
-                "topic": topic,
-                "score": f"{overall:.1f}",
-                "feedback": feedback,
-                "creator_profile": profile_str,
-                "retrieved_examples": retrieved_examples,
-                **style_params,
-            })
-            current_script = _parse_script_response(raw)
-            print(f"[ScriptingAgent] Regenerated → '{current_script.concept_name}'")
-        except Exception as e:
-            print(f"[ScriptingAgent] Regeneration failed: {e} — keeping previous")
-            break
-
-    # Pick the best score across all attempts
-    best_scores = max(all_scores, key=lambda s: float(s.get("overall", 0)))
-
-    return current_script, {
-        "mode": "full_pipeline",
-        "llm_calls": 1 + len(all_scores) + (len(all_scores) - 1 if regen_triggered else 0),
+    print(f"[ScriptingAgent] {mode} / {hook_type}: overall {best_scores['overall']} "
+          f"after {len(history)} attempt(s)")
+    return best_script, {
+        "mode": mode,
+        "hook_type": hook_type,
+        "structure": structure,
         "evaluator_scores": best_scores,
-        "regen_triggered": regen_triggered,
-        "all_scores": all_scores,
+        "all_scores": history,
+        "regen_triggered": len(history) > 1,
+        "examples_used": len(shots),
+        "baseline": {k: v for k, v in baseline.items()
+                     if k in ("wpm", "wpm_source", "word_budget", "measured_style", "transcripts",
+                              "transcripts_excluded", "baseline_words", "low_confidence")},
     }
+
+
+def known_hooks(hooks: list) -> list[str]:
+    """
+    Keep only recognised hook types (HOOK_GUIDE), title-cased. A weak profiling
+    model can put garbage in signature_hooks (e.g. a mistranslated phrase) —
+    writing a script "in that hook type" makes no sense.
+    """
+    return [h.strip().title() for h in hooks
+            if isinstance(h, str) and h.strip().lower() in HOOK_GUIDE]
+
+
+def variant_hooks(profile: dict, n: int = 3) -> list[str]:
+    """The creator's (recognised) signature hooks first, topped up with common defaults."""
+    return list(dict.fromkeys(known_hooks(profile.get("signature_hooks", [])) + DEFAULT_HOOKS))[:n]
+
+
+def generate_variants(topic: str, trend: dict | None = None, profile: dict | None = None,
+                      n: int = 3) -> list[tuple[ScriptOutput, dict]]:
+    """
+    Product path: full pipeline once per signature hook → n distinct variants.
+
+    Raises:
+        LocalLLMError: if every variant failed.
+    """
+    context = prepare_context(profile)
+    examples = retrieve_examples(context["examples"], topic)
+    results, errors = [], []
+    for i, hook in enumerate(variant_hooks(context["profile"], n), 1):
+        try:
+            results.append(run_mode("full_pipeline", topic, context, examples, hook, trend, script_id=i))
+        except LocalLLMError as e:
+            print(f"[ScriptingAgent] Variant '{hook}' failed: {e}")
+            errors.append(str(e))
+    if not results:
+        raise LocalLLMError(f"All script variants failed: {errors[0] if errors else 'unknown error'}")
+    return results
+
+
+def run_ablation(topic: str, trend: dict | None = None, profile: dict | None = None,
+                 hook_type: str | None = None) -> dict[str, tuple[ScriptOutput, dict]]:
+    """Research path: the same topic/hook through all three modes, same evaluator."""
+    context = prepare_context(profile)
+    examples = retrieve_examples(context["examples"], topic)
+    hook = hook_type or _extract_style_params(context["profile"])["hook_type"]
+    return {mode: run_mode(mode, topic, context, examples, hook, trend) for mode in MODES}
 
 
 # ─── LangGraph Node ────────────────────────────────────────────────────────────
@@ -736,94 +820,37 @@ def scripting_agent(state: PipelineState) -> dict[str, Any]:
     """
     LangGraph node: Scripting Agent.
 
-    Reads research_output and creator_profile from state, generates a
-    script using the mode specified in state (defaults to 'full_pipeline'),
-    and returns a partial state update with scripting_output set.
-
-    State fields read:
-      - research_output.topic
-      - creator_profile
-      - scripting_mode (optional, defaults to "full_pipeline")
-
-    State fields written:
-      - scripting_output (ScriptingOutput)
-      - scripting_error (str or None)
-
-    Args:
-        state: Current PipelineState.
-
-    Returns:
-        Partial state update dict.
+    Reads research_output (topic + trend context) and creator_profile.
+    Default: 3 full-pipeline variants (one per signature hook), with the
+    highest-scoring one as final_script. If state["scripting_mode"] names
+    an ablation mode, only that mode runs.
     """
     research_output = state.get("research_output") or {}
-    creator_profile = state.get("creator_profile") or {}
     topic = research_output.get("topic", "")
-    mode = state.get("scripting_mode", "full_pipeline")  # type: ignore
-    creator_id = state.get("creator_id", "unknown")
-
-    print(f"\n[ScriptingAgent] creator_id={creator_id}, topic='{topic}', mode={mode}")
+    mode = state.get("scripting_mode")  # type: ignore[typeddict-item]
+    print(f"\n[ScriptingAgent] creator_id={state.get('creator_id', 'unknown')}, "
+          f"topic='{topic}', mode={mode or 'variants'}")
 
     if not topic:
-        return {
-            "scripting_output": None,
-            "scripting_error": "No topic found in research_output — run ResearchAgent first",
-        }
-
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if not api_key:
-        return {
-            "scripting_output": None,
-            "scripting_error": "GROQ_API_KEY not set",
-        }
+        return {"scripting_output": None,
+                "scripting_error": "No topic found in research_output — run ResearchAgent first"}
 
     try:
-        llm = ChatGroq(
-            api_key=api_key,
-            model_name=GROQ_MODEL,
-            temperature=0.7,  # Moderate creativity for scripts
-            max_tokens=2048,
-        )
+        profile = state.get("creator_profile") or None
+        if mode in MODES:
+            context = prepare_context(profile)
+            examples = retrieve_examples(context["examples"], topic)
+            hook = _extract_style_params(context["profile"])["hook_type"]
+            results = [run_mode(mode, topic, context, examples, hook, research_output)]
+        else:
+            results = generate_variants(topic, research_output, profile)
 
-        # Load creator profile if not in state
-        if not creator_profile:
-            creator_profile = _load_creator_profile()
-
-        style_params = _extract_style_params(creator_profile)
-
-        # Load RAG components (needed for retrieval_only and full_pipeline)
-        retrieved_examples = ""
-        if mode in ("retrieval_only", "full_pipeline"):
-            retriever = _load_chroma_retriever()
-            retrieved_examples = _retrieve_examples(retriever, topic)
-
-        # Run the selected mode
-        if mode == "no_history":
-            script, metadata = generate_no_history(topic, style_params, llm)
-        elif mode == "retrieval_only":
-            script, metadata = generate_retrieval_only(
-                topic, style_params, creator_profile, retrieved_examples, llm
-            )
-        else:  # full_pipeline (default)
-            script, metadata = generate_full_pipeline(
-                topic, style_params, creator_profile, retrieved_examples, llm
-            )
-
-        # Wrap in ScriptingOutput — final_script holds the node's output
-        scripting_output = ScriptingOutput(
-            scripts=[script],
-            final_script=script,
-        )
-
+        best_script, _ = max(results, key=lambda r: r[1]["evaluator_scores"]["overall"])
         return {
-            "scripting_output": scripting_output,
+            "scripting_output": ScriptingOutput(scripts=[s for s, _ in results], final_script=best_script),
             "scripting_error": None,
-            "scripting_metadata": metadata,  # type: ignore — extra field for test scripts
+            "scripting_metadata": [m for _, m in results],  # type: ignore — extra field for test scripts
         }
-
-    except Exception as e:
-        error_msg = f"ScriptingAgent failed: {str(e)}"
-        print(f"[ScriptingAgent] ERROR: {error_msg}")
-        return {
-            "scripting_output": None,
-            "scripting_error": error_msg,
-        }
+    except (LocalLLMError, ValueError) as e:
+        print(f"[ScriptingAgent] ERROR: {e}")
+        return {"scripting_output": None, "scripting_error": f"ScriptingAgent failed: {e}"}

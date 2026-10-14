@@ -29,6 +29,12 @@ from rich.console import Console
 # multiple videos in a loop.
 _whisper_model = None
 
+# Spoken language Whisper detected in the most recent transcribe_audio() call
+# (ISO code, e.g. "en", "hi"). With task="translate" the transcript is always
+# English, so this is the only record of what the creator actually spoke —
+# the Scripting Agent uses it to keep translated videos out of its style baseline.
+last_language: str = ""
+
 console = Console()
 
 
@@ -134,7 +140,8 @@ def transcribe_audio(audio_path: str, model_size: str = "tiny", language: str = 
         FileNotFoundError: If audio_path doesn't exist.
         RuntimeError:      If Whisper fails.
     """
-    global _whisper_model  # Access the module-level model cache
+    global _whisper_model, last_language  # module-level model cache + detected language
+    last_language = ""
 
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: '{audio_path}'")
@@ -163,6 +170,7 @@ def transcribe_audio(audio_path: str, model_size: str = "tiny", language: str = 
             audio_path, fp16=False, language=language, task=task
         )
         transcript: str = result.get("text", "").strip()
+        last_language = result.get("language") or language or ""
 
         # ── Clean up hallucinated garbage characters ──────────────────────
         # Whisper tiny sometimes hallucinates non-Latin/non-Urdu characters
