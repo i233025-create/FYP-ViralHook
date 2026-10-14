@@ -69,6 +69,7 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from pipeline.state import PipelineState  # noqa: E402
 from pipeline.local_llm import LocalLLMError, chat_json  # noqa: E402
+from pipeline.embeddings import embed_texts  # noqa: E402,F401  (module attr: tests patch it)
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 CACHE_DIR = Path(__file__).parent.parent / "cache"
@@ -89,7 +90,6 @@ MIN_LATIN_RATIO = 0.7            # drops Devanagari/Urdu titles with no language
 W_OUTLIER, W_VELOCITY, W_ENGAGEMENT = 0.45, 0.35, 0.20
 
 # Clustering (step 4)
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 CLUSTER_LINKAGE = "complete"      # every pair in a cluster must be similar
 CLUSTER_DISTANCE_THRESHOLD = 0.6  # cosine distance; lower = tighter clusters
 DUPLICATE_SIMILARITY = 0.95       # cosine ≥ this = same video reuploaded
@@ -424,18 +424,6 @@ def score_videos(videos: list[dict], now: datetime) -> list[dict]:
 
 
 # ─── [4] Clustering ────────────────────────────────────────────────────────────
-
-_embedder = None
-
-
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """all-MiniLM-L6-v2 → (n, 384) L2-normalised matrix. Model loads once (CPU)."""
-    global _embedder
-    if _embedder is None:
-        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-        from sentence_transformers import SentenceTransformer
-        _embedder = SentenceTransformer(EMBEDDING_MODEL, device="cpu")
-    return np.asarray(_embedder.encode(texts, normalize_embeddings=True, show_progress_bar=False))
 
 
 def video_text(video: dict) -> str:
