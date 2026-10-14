@@ -19,17 +19,23 @@ export default function IdeationScreen() {
   const [researchStep, setResearchStep] = useState(-1)
   const [topics, setTopics] = useState([])
   const [ownError, setOwnError] = useState('')
+  const [researchError, setResearchError] = useState('')
 
   const startResearch = async () => {
     setResearching(true)
     setResearchStep(0)
     setTopics([])
-    const { topics: t } = await fetchTrendingTopics({
-      niche: creatorProfile?.niche,
-      onStep: (step) => setResearchStep(step.id - 1),
-    })
-    setTopics(t)
-    setTrendingTopics(t)   // save to context so TopicSelectScreen can use them
+    setResearchError('')
+    try {
+      const { topics: t } = await fetchTrendingTopics({
+        niche: creatorProfile?.niche,
+        onStep: (step) => setResearchStep(step.id - 1),
+      })
+      setTopics(t)
+      setTrendingTopics(t)   // save to context so TopicSelectScreen can use them
+    } catch (err) {
+      setResearchError(err?.message || 'Research failed. Check that the backend is running.')
+    }
     setResearching(false)
   }
 
@@ -132,6 +138,13 @@ export default function IdeationScreen() {
                 </div>
                 <ProgressSteps steps={RESEARCH_STEPS} currentStep={researchStep} />
               </Card>
+            )}
+
+            {!researching && researchError && (
+              <Alert type="error">
+                <p>{researchError}</p>
+                <Btn size="sm" variant="secondary" className="mt-2" onClick={startResearch}>Try again</Btn>
+              </Alert>
             )}
 
             {/* Results */}

@@ -128,3 +128,20 @@ def chat_json(prompt: str, system: str = "", temperature: float = 0.3,
     if not isinstance(result, dict):
         raise LocalLLMError(f"LLM returned non-object JSON: {result!r}")
     return result
+
+
+def release_gpu(model: str | None = None) -> None:
+    """
+    Ask Ollama to unload `model` now instead of after its 5-minute keep-alive.
+    The Video Agent calls this before SDXL so both don't share the 10 GB GPU.
+    No-op for Groq or when Ollama is not running.
+    """
+    if os.getenv("LLM_PROVIDER", "ollama").lower() != "ollama":
+        return
+    host = os.getenv("OLLAMA_HOST", DEFAULT_HOST).rstrip("/")
+    try:
+        requests.post(f"{host}/api/generate",
+                      json={"model": model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL), "keep_alive": 0},
+                      timeout=30)
+    except requests.RequestException:
+        pass

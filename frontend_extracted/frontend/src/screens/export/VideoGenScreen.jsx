@@ -203,8 +203,12 @@ export default function VideoGenScreen() {
             <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide mb-3">
               Measured style fidelity · {videoResult.mode}
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               <Score label="Style fidelity" value={pct(videoResult.evaluation.scores.style_fidelity)} />
+              <Score label="Visual look match" value={pct(videoResult.evaluation.scores.visual_match)}
+                hint={videoResult.evaluation.visual
+                  ? `CLIP ${videoResult.evaluation.visual.creator_similarity} vs creator's own ${videoResult.evaluation.visual.creator_self_similarity}`
+                  : 'no Module 2 visual vectors'} />
               <Score label="Cut pacing match" value={pct(videoResult.evaluation.scores.pacing_match)}
                 hint={`${videoResult.evaluation.measured?.avg_shot_duration ?? '—'}s vs ${videoResult.evaluation.target?.avg_shot_duration ?? '—'}s`} />
               <Score label="Speech rate match" value={pct(videoResult.evaluation.scores.speech_rate_match)}

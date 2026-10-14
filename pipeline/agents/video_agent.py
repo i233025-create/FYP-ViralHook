@@ -4,17 +4,18 @@ video_agent.py — Module 4: Video Generation Agent
 Script (Scripting Agent output or frontend production plan) + creator profile
 → rendered 1080×1920 MP4, timeline.json and a measured evaluation.
 
-  1. style plan     profile → StyleParams        (pipeline/video/style_plan.py)
+  1. style plan     profile + Module 2 CLIP vectors → StyleParams (cuts, pace, look)
   2. voiceover      Kokoro per scene, wpm-calibrated → real scene timing
   3. shot plan      scene ÷ shot_duration → sub-shots + search queries
-  4. assets         Pexels+CLIP → SDXL-Lightning → placeholder, per shot
+  4. assets         Pexels / SDXL candidates ranked by topic (+ creator look), per shot
   5. timeline       timeline.json (single source of truth)
   6. render         FFmpeg + burned-in captions
   7. evaluate       Module 2 extractors on the MP4 vs the creator profile
 
 Modes:
-  personalised — edit parameters measured from the creator's own videos
-  generic      — fixed template defaults (the baseline)
+  personalised — edit parameters measured from the creator's own videos, shots
+                 ranked toward the creator's visual look, look words in SDXL prompts
+  generic      — fixed template defaults, topic-only ranking (the baseline)
 
 Output: pipeline/output/video/<job_id>/{final.mp4, timeline.json, evaluation.json}
 
@@ -43,7 +44,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pipeline.video import renderer                                   # noqa: E402
+from pipeline.local_llm import release_gpu                             # noqa: E402
 from pipeline.video.assets import AssetResolver                       # noqa: E402
+from pipeline.video.creator_visual import (                           # noqa: E402
+    CreatorVisual, describe_look, load_creator_visual,
+)
 from pipeline.video.evaluator import compare, evaluate                # noqa: E402
 from pipeline.video.shot_planner import image_prompt, plan_queries    # noqa: E402
 from pipeline.video.style_plan import plan_style                      # noqa: E402
@@ -84,10 +89,12 @@ def generate_video(script, profile: dict, mode: str = "personalised",
                    job_id: str | None = None, out_dir: str | Path | None = None,
                    on_step: StepCallback | None = None,
                    tts: TTSEngine | None = None, resolver: AssetResolver | None = None,
-                   use_llm: bool = True, run_evaluation: bool = True, title: str = "ViralHook") -> dict:
+                   use_llm: bool = True, run_evaluation: bool = True, title: str = "ViralHook",
+                   creator: CreatorVisual | None | bool = True) -> dict:
     """
     Run the full pipeline once. Returns
       {job_id, mode, video_path, timeline_path, timeline, evaluation, seconds}
+    `creator`: True = load Module 2 vectors, None/False = run without them.
     """
     started = time.time()
     job_id = job_id or uuid.uuid4().hex[:12]
@@ -101,10 +108,20 @@ def generate_video(script, profile: dict, mode: str = "personalised",
             on_step(n, STEPS[n - 1], detail)
 
     scenes = normalize_scenes(script)
+    if creator is True:
+        creator = load_creator_visual()
+    creator = creator or None
+    resolver = resolver or AssetResolver(CACHE_DIR)
 
     # 1. Style
     step(1, mode)
-    style = plan_style(profile, mode)
+    look = []
+    if mode == "personalised" and creator is not None and resolver._scorer() is not None:
+        try:
+            look = describe_look(creator, resolver.scorer)
+        except Exception as e:   # CLIP missing → still personalise cuts/pace
+            print(f"[VideoAgent] Creator look unavailable: {e}")
+    style = plan_style(profile, mode, visual_look=look, has_creator_visual=creator is not None)
 
     # 2. Voiceover → real timing
     tts = tts or KokoroTTS()
@@ -124,15 +141,18 @@ def generate_video(script, profile: dict, mode: str = "personalised",
         queries, _ = plan_queries(sc["clip_idea"], sc["voiceover"], len(bounds), niche, use_llm=use_llm)
         shots = []
         for (s, e), q in zip(bounds, queries):
-            shots.append(Shot(start=s, end=e, query=q, image_prompt=image_prompt(q, sc["clip_idea"]),
+            shots.append(Shot(start=s, end=e, query=q,
+                              image_prompt=image_prompt(q, sc["clip_idea"], style.visual_look),
                               motion=motion_for(shot_index)))
             shot_index += 1
         tracks.append(SceneTrack(scene_id=i + 1, segment=sc["segment"], start=start, end=end,
                                  clip_idea=sc["clip_idea"], caption=sc["caption"],
                                  voiceover=sc["voiceover"], voice=voice, shots=shots))
 
+    if use_llm:
+        release_gpu()   # unload Ollama before SDXL needs the VRAM
+
     # 4. Assets
-    resolver = resolver or AssetResolver(CACHE_DIR)
     used_ids: set = set()
     total = sum(len(t.shots) for t in tracks)
     done = 0
@@ -140,7 +160,8 @@ def generate_video(script, profile: dict, mode: str = "personalised",
         for shot in track.shots:
             done += 1
             step(4, f"shot {done}/{total}: {shot.query}")
-            shot.asset = resolver.resolve(shot.query, shot.image_prompt, used_ids)
+            shot.asset = resolver.resolve(shot.query, shot.image_prompt, used_ids,
+                                          creator=creator, creator_weight=style.creator_weight)
     resolver.release()
 
     # 5. Timeline
@@ -159,7 +180,7 @@ def generate_video(script, profile: dict, mode: str = "personalised",
         step(7)
         try:
             evaluation = evaluate(video_path, timeline, profile, work, clean_video=work / "video.mp4",
-                                  scorer=getattr(resolver, "scorer", None))
+                                  scorer=resolver._scorer(), creator=creator)
             dump_json(evaluation, job_dir / "evaluation.json")
         except Exception as e:   # evaluation must never lose a finished render
             print(f"[VideoAgent] Evaluation failed: {e}")

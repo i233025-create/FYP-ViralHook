@@ -52,6 +52,17 @@ class TestStylePlan:
         assert style.shot_duration == 1.0
         assert style.target_wpm == 200.0
 
+    def test_creator_visual_sets_look_and_weight(self, multimodal_profile):
+        look = ["warm golden light", "high contrast", "city street"]
+        personal = plan_style(multimodal_profile, "personalised", visual_look=look, has_creator_visual=True)
+        assert personal.visual_look == look and personal.creator_weight > 0
+        generic = plan_style(multimodal_profile, "generic", visual_look=look, has_creator_visual=True)
+        assert generic.visual_look == [] and generic.creator_weight == 0
+
+    def test_no_creator_visual_no_look(self, multimodal_profile):
+        style = plan_style(multimodal_profile, "personalised", visual_look=["x"], has_creator_visual=False)
+        assert style.visual_look == [] and style.creator_weight == 0
+
     def test_unknown_mode_raises(self):
         with pytest.raises(ValueError):
             plan_style({}, "cinematic")
@@ -166,3 +177,7 @@ class TestShotPlanner:
         prompt = image_prompt("woman running", "sunrise on a mountain trail")
         assert prompt.startswith("woman running") and "cinematic" in prompt
         assert "text" not in prompt
+
+    def test_image_prompt_includes_creator_look(self):
+        prompt = image_prompt("woman running", "trail", look=["warm golden light", "city street"])
+        assert "warm golden light, city street" in prompt

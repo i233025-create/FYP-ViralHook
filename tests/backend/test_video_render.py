@@ -9,11 +9,13 @@ import struct
 import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from pipeline.video import renderer
 from pipeline.video.assets import AssetResolver, pick_video_file
-from pipeline.video.evaluator import compare, evaluate, ratio_similarity
+from pipeline.video.creator_visual import CreatorVisual
+from pipeline.video.evaluator import compare, evaluate, frame_scores, ratio_similarity
 from pipeline.video.style_plan import GENERIC, plan_style
 from pipeline.video.timeline import Asset, SceneTrack, Shot, Timeline, VoiceClip, WordTiming
 from pipeline.video.tts import estimate_word_timings, synthesize_scene, words_per_minute
@@ -40,6 +42,29 @@ class FakeTTS:
             w.writeframes(b"".join(struct.pack("<h", int(3000 * math.sin(i / 20)))
                                    for i in range(int(duration * rate))))
         return VoiceClip(path=str(out_path), duration=duration, speed=speed)
+
+
+def vec(text_score, creator_score=0.0):
+    """4-dim unit vector: axis 0 = the query text, axis 2 = the creator look."""
+    v = np.array([text_score, 0.0, creator_score, 0.0], dtype=np.float32)
+    v[1] = np.sqrt(max(0.0, 1.0 - float(v @ v)))
+    return v
+
+
+class FakeScorer:
+    """CLIP stand-in: images keyed by file stem; every text embeds to axis 0."""
+
+    def __init__(self, images=None):
+        self.images = images or {}
+
+    def image_embeddings(self, paths):
+        return np.stack([self.images[Path(p).stem] for p in paths])
+
+    def text_embeddings(self, texts):
+        return np.tile(np.eye(4, dtype=np.float32)[0], (len(texts), 1))
+
+
+CREATOR = CreatorVisual(vectors=np.array([[0, 0, 1, 0], [0, 0.2, 0.98, 0]], dtype=np.float32))
 
 
 def _timeline(caption_style="karaoke"):
@@ -161,34 +186,104 @@ class TestAssets:
         asset = resolver.resolve("city at night")
         assert asset.source == "placeholder" and Path(asset.path).exists()
 
-    def test_pexels_below_threshold_falls_through(self, tmp_path, monkeypatch):
-        class Scorer:
-            def score(self, paths, text):
-                return [0.1] * len(paths)
-
-        resolver = AssetResolver(tmp_path, pexels_key="k", scorer=Scorer(), use_image_gen=False)
-        video = {"id": 7, "image": "u", "video_files": [
-            {"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "l"}]}
-        monkeypatch.setattr(resolver.pexels, "search", lambda q: [video])
-        monkeypatch.setattr(resolver.pexels, "thumbnail", lambda v: tmp_path / "t.jpg")
-        assert resolver.resolve("q").source == "placeholder"
-
-    def test_pexels_best_unused_clip_wins(self, tmp_path, monkeypatch):
-        class Scorer:
-            def score(self, paths, text):
-                return [0.30, 0.35][:len(paths)]
-
-        resolver = AssetResolver(tmp_path, pexels_key="k", scorer=Scorer(), use_image_gen=False)
+    def _pexels(self, tmp_path, monkeypatch, images, **kwargs):
+        resolver = AssetResolver(tmp_path, pexels_key="k", scorer=FakeScorer(images),
+                                 use_image_gen=False, **kwargs)
         files = [{"file_type": "video/mp4", "width": 1080, "height": 1920, "link": "l"}]
-        videos = [{"id": 1, "image": "u", "video_files": files}, {"id": 2, "image": "u", "video_files": files}]
+        videos = [{"id": int(k), "image": "u", "video_files": files} for k in images]
         monkeypatch.setattr(resolver.pexels, "search", lambda q: videos)
         monkeypatch.setattr(resolver.pexels, "thumbnail", lambda v: tmp_path / f"{v['id']}.jpg")
         monkeypatch.setattr(resolver.pexels, "download", lambda v: tmp_path / f"{v['id']}.mp4")
+        return resolver
+
+    def test_pexels_below_threshold_falls_through(self, tmp_path, monkeypatch):
+        resolver = self._pexels(tmp_path, monkeypatch, {"7": vec(0.1)})
+        assert resolver.resolve("q").source == "placeholder"
+
+    def test_pexels_best_unused_clip_wins(self, tmp_path, monkeypatch):
+        resolver = self._pexels(tmp_path, monkeypatch, {"1": vec(0.30), "2": vec(0.35)})
         used = set()
         first = resolver.resolve("q", used_ids=used)
         assert first.source == "pexels" and first.source_id == "2" and first.clip_score == 0.35
         second = resolver.resolve("q", used_ids=used)
         assert second.source_id == "1"                # clip 2 already used
+
+    def test_creator_weight_reorders_on_topic_clips(self, tmp_path, monkeypatch):
+        images = {"1": vec(0.30, creator_score=0.9), "2": vec(0.33)}
+        resolver = self._pexels(tmp_path, monkeypatch, images)
+        assert resolver.resolve("q", creator=CREATOR, creator_weight=0.0).source_id == "2"
+        personal = resolver.resolve("q", creator=CREATOR, creator_weight=0.5)
+        assert personal.source_id == "1"
+        assert personal.creator_score > 0.8
+
+    def test_creator_weight_never_admits_off_topic_clip(self, tmp_path, monkeypatch):
+        images = {"1": vec(0.10, creator_score=0.99), "2": vec(0.26)}
+        resolver = self._pexels(tmp_path, monkeypatch, images)
+        assert resolver.resolve("q", creator=CREATOR, creator_weight=5.0).source_id == "2"
+
+    def test_image_candidates_ranked_same_count_both_modes(self, tmp_path):
+        scorer = FakeScorer()
+
+        class FakeGen:
+            calls = 0
+
+            def generate(self, prompt, path, seed=None):
+                FakeGen.calls += 1
+                # even seed: on-topic; odd seed: creator-looking but a bit less on-topic
+                scorer.images[Path(path).stem] = vec(0.32) if seed % 2 == 0 else vec(0.29, 0.9)
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                Path(path).write_bytes(b"png")
+
+        def resolver(cache):
+            return AssetResolver(tmp_path / cache, pexels_key="", scorer=scorer, image_gen=FakeGen(),
+                                 use_image_gen=True, image_candidates=2)
+
+        generic = resolver("g").resolve("q", "prompt", creator=CREATOR, creator_weight=0.0)
+        personal = resolver("p").resolve("q", "prompt", creator=CREATOR, creator_weight=0.5)
+        assert FakeGen.calls == 4                                     # 2 candidates each
+        assert generic.clip_score > personal.clip_score
+        assert personal.creator_score > generic.creator_score
+        assert "best of 2" in personal.note
+
+
+# ─── Creator visual ───────────────────────────────────────────────────────────
+
+class TestCreatorVisual:
+    def test_load_snapshot(self, tmp_path):
+        import json
+        snap = tmp_path / "snap.json"
+        snap.write_text(json.dumps({"points": [
+            {"visual_vector": [0, 0, 2, 0], "payload": {"talking_head_pct": 0.8}},
+            {"visual_vector": [0, 1, 1, 0], "payload": {"talking_head_pct": 0.6}},
+            {"visual_vector": [0, 0, 0, 0], "payload": {}},               # failed video, skipped
+        ]}))
+        from pipeline.video.creator_visual import load_creator_visual
+        creator = load_creator_visual(snap)
+        assert creator.vectors.shape == (2, 4)
+        assert np.allclose(np.linalg.norm(creator.vectors, axis=1), 1)
+        assert creator.talking_head_pct == 0.7
+
+    def test_missing_snapshot_is_none(self, tmp_path):
+        from pipeline.video.creator_visual import load_creator_visual
+        assert load_creator_visual(tmp_path / "nope.json") is None
+
+    def test_similarity_and_self_similarity(self):
+        assert CREATOR.similarity(np.eye(4, dtype=np.float32)[2])[0] > 0.99
+        assert 0.9 < CREATOR.self_similarity() <= 1.0
+        assert CreatorVisual(vectors=CREATOR.vectors[:1]).self_similarity() is None
+
+    def test_describe_look_picks_one_word_per_group(self):
+        from pipeline.video.creator_visual import LOOK_VOCAB, describe_look
+
+        class LookScorer:
+            def text_embeddings(self, texts):
+                # the creator axis (2) lights up for "warm" and "city"
+                return np.stack([np.eye(4, dtype=np.float32)[2 if ("warm" in t or "city" in t) else 0]
+                                 for t in texts])
+
+        look = describe_look(CREATOR, LookScorer())
+        assert len(look) == len(LOOK_VOCAB)
+        assert "warm golden light" in look and "city street" in look
 
 
 # ─── Evaluator ────────────────────────────────────────────────────────────────
@@ -214,15 +309,35 @@ class TestEvaluator:
                           measure=lambda v, t: {"avg_shot_duration": 2.0}, scorer=_NoClip())
         assert result["scores"]["style_fidelity"] is None
 
+    def test_frame_scores_visual_match(self, tmp_path):
+        scorer = FakeScorer({"a": vec(0.3, 0.9), "b": vec(0.25, 0.85)})
+        frames = [(str(tmp_path / "a.jpg"), "idea one"), (str(tmp_path / "b.jpg"), "idea two")]
+        alignment, visual = frame_scores(frames, scorer, CREATOR)
+        assert alignment["mean"] == pytest.approx(0.275, abs=1e-3)
+        assert 0.8 < visual["creator_similarity"] < 1.0
+        assert visual["creator_self_similarity"] == CREATOR.self_similarity()
+
+    def test_visual_match_joins_style_fidelity(self, tmp_path, monkeypatch):
+        import pipeline.video.evaluator as ev
+        monkeypatch.setattr(ev, "extract_midframes",
+                            lambda *a: [(str(tmp_path / "a.jpg"), "city")])
+        profile = {"visual_analysis": {"mean_avg_shot_duration": 2.0},
+                   "audio_analysis": {"mean_speech_rate_wpm": 120}}
+        result = evaluate("v.mp4", _timeline(), profile, tmp_path,
+                          measure=lambda v, t: {"avg_shot_duration": 2.0, "speech_rate_wpm": 120},
+                          scorer=FakeScorer({"a": vec(0.3, 0.5)}), creator=CREATOR)
+        vm = result["scores"]["visual_match"]
+        assert 0 < vm < 1
+        assert result["scores"]["style_fidelity"] == pytest.approx((1 + 1 + vm) / 3, abs=1e-3)
+
     def test_compare_deltas(self):
         p = {"scores": {"pacing_match": 0.9, "speech_rate_match": 0.8, "style_fidelity": 0.85}}
         g = {"scores": {"pacing_match": 0.3, "speech_rate_match": 0.7, "style_fidelity": 0.5}}
         assert compare(p, g)["style_fidelity"]["delta"] == 0.35
 
 
-class _NoClip:
-    def score(self, paths, text):
-        return [0.0 for _ in paths]
+class _NoClip(FakeScorer):
+    pass
 
 
 # ─── End-to-end (FFmpeg, no models) ───────────────────────────────────────────
@@ -238,7 +353,7 @@ def test_generate_video_end_to_end(tmp_path, sample_production_plan):
     steps = []
     result = generate_video(plan, profile, out_dir=tmp_path, tts=FakeTTS(0.3),
                             resolver=AssetResolver(tmp_path / "cache", pexels_key="", use_image_gen=False),
-                            use_llm=False, run_evaluation=False,
+                            use_llm=False, run_evaluation=False, creator=None,
                             on_step=lambda n, label, detail: steps.append(n))
 
     video = Path(result["video_path"])

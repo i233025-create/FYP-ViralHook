@@ -84,6 +84,21 @@ export default function DashboardScreen() {
               <p className="text-discord-muted text-xs leading-relaxed line-clamp-4">{creatorProfile.styleSummary}</p>
             </div>
 
+            {/* Measured by Module 2 from the creator's own videos; drives the Video Agent */}
+            {(creatorProfile.rawProfile?.visual_analysis || creatorProfile.rawProfile?.audio_analysis) && (
+              <div className="mt-4 pt-4 border-t border-discord-faint/20 space-y-3">
+                <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide">Measured Style</p>
+                {creatorProfile.rawProfile.visual_analysis && (
+                  <ProfileRow label="Avg shot" value={`${creatorProfile.rawProfile.visual_analysis.mean_avg_shot_duration?.toFixed(2)}s · ${creatorProfile.rawProfile.visual_analysis.visual_pacing}`} />
+                )}
+                {creatorProfile.rawProfile.audio_analysis && (
+                  <>
+                    <ProfileRow label="Speech rate" value={`${Math.round(creatorProfile.rawProfile.audio_analysis.mean_speech_rate_wpm)} wpm`} />
+                    <ProfileRow label="Energy" value={creatorProfile.rawProfile.audio_analysis.energy_label} />
+                  </>
+                )}
+              </div>
+            )}
 
 
           </Card>

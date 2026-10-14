@@ -40,6 +40,7 @@ load_dotenv(ROOT / "module1_style_extraction" / ".env")
 load_dotenv(ROOT / ".env")
 
 PROFILE_PATH = ROOT / "module1_style_extraction" / "creator_profile.json"
+MULTIMODAL_PROFILE_PATH = ROOT / "module2_multimodal_rag" / "creator_profile_multimodal.json"
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="ViralHook PoC API", version="0.1.0")
@@ -221,6 +222,13 @@ def get_creator_profile(handle: str = "", niche: str = ""):
 
     with open(PROFILE_PATH, "r", encoding="utf-8") as f:
         raw = json.load(f)
+    # Module 2's measured visual/audio stats (shot length, wpm, energy) when available
+    if MULTIMODAL_PROFILE_PATH.exists():
+        with open(MULTIMODAL_PROFILE_PATH, "r", encoding="utf-8") as f:
+            multimodal = json.load(f)
+        for key in ("visual_analysis", "audio_analysis", "_analyzed_videos"):
+            if key in multimodal:
+                raw[key] = multimodal[key]
 
     profile = _raw_profile_to_frontend(raw, handle=handle, niche=niche)
     return {"profile": profile}

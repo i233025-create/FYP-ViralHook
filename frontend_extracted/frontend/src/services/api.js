@@ -1,10 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VIRALHOOK — API SERVICE LAYER
 //
-// Flip USE_REAL_BACKEND to true to route the three implemented
-// pipeline endpoints to the FastAPI server (uvicorn server:app --port 8000).
-// AI video also uses the backend (POST /video/generate + status polling).
-// Everything else (auth, publishing) stays mocked.
+// Real backend (FastAPI, uvicorn server:app --port 8000) is the default for
+// onboarding profile, research, scripting, XML export and AI video.
+// Auth, new-creator onboarding and publishing stay mocked (no backend yet).
+//
+// Override in frontend/.env.local:
+//   VITE_USE_REAL_BACKEND=false        → whole UI on mock data (offline demo)
+//   VITE_API_BASE=http://host:8000     → backend on another machine
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -25,10 +28,8 @@ import {
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ── Backend switch ─────────────────────────────────────────────────────────
-// Set USE_REAL_BACKEND = true to route research, scripting, and XML export
-// to the FastAPI server. Run: uvicorn server:app --reload --port 8000
-const USE_REAL_BACKEND = false
-const API_BASE = 'http://localhost:8000'
+export const USE_REAL_BACKEND = import.meta.env.VITE_USE_REAL_BACKEND !== 'false'
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
 async function apiFetch(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -83,10 +84,10 @@ export async function createNewCreatorProfile(formData) {
 }
 
 /**
- * POST /onboarding/process-videos
- * Runs mock processing steps (video upload/transcription is CLI-based in PoC),
- * then fetches the REAL creator profile from creator_profile.json via the backend.
- * Falls back to mock profile if the backend has no profile yet.
+ * GET /onboarding/profile
+ * Video upload/transcription is CLI-based in the PoC (module1 + module2 main.py),
+ * so the steps below only pace the UI; the profile itself is the REAL one the
+ * backend built from the creator's videos. Throws if the backend has none.
  */
 export async function processCreatorVideos({ handle, niche, onStep }) {
   const steps = [
@@ -97,21 +98,23 @@ export async function processCreatorVideos({ handle, niche, onStep }) {
     { id: 5, label: 'Generating creator profile', duration: 1200 },
   ]
   for (const step of steps) {
-    await delay(step.duration)
+    await delay(USE_REAL_BACKEND ? 300 : step.duration)
     onStep(step)
   }
 
   if (USE_REAL_BACKEND) {
+    const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
+    let res
     try {
-      const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
-      const res = await fetch(`${API_BASE}/onboarding/profile?${params}`)
-      if (res.ok) {
-        const data = await res.json()
-        return { profile: data.profile }
-      }
+      res = await fetch(`${API_BASE}/onboarding/profile?${params}`)
     } catch (_) {
-      // Backend unreachable — fall through to mock
+      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
     }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Profile request failed (${res.status})`)
+    }
+    return { profile: (await res.json()).profile }
   }
 
   return { profile: MOCK_EXPERIENCED_CREATOR_PROFILE(handle, niche) }
@@ -155,7 +158,7 @@ export async function fetchTrendingTopics({ niche, onStep }) {
  * POST /script/generate
  * Returns: { variants } | { failed: true, variants }
  */
-export async function generateScripts({ topic, creatorProfile, forceFail = false, onStep }) {
+export async function generateScripts({ topic, trend = null, creatorProfile, forceFail = false, onStep }) {
   const steps = [
     { id: 1, label: 'Retrieving creator context' },
     { id: 2, label: 'Generating script variants' },
@@ -170,7 +173,7 @@ export async function generateScripts({ topic, creatorProfile, forceFail = false
       if (onStep) onStep(steps[i])
       await delay(400)
     }
-    const data = await apiFetch('/script/generate', { topic, niche: creatorProfile?.niche || 'Tech' })
+    const data = await apiFetch('/script/generate', { topic, trend, niche: creatorProfile?.niche || 'Tech' })
     if (onStep) onStep(steps[steps.length - 1])
     return data  // { failed: false, variants: [...] }
   }

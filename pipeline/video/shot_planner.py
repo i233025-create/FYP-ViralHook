@@ -88,7 +88,10 @@ def plan_queries(clip_idea: str, voiceover: str, n: int, niche: str = "",
     return fallback_queries(clip_idea, voiceover, n), "keywords"
 
 
-def image_prompt(query: str, clip_idea: str) -> str:
-    """Prompt for the image model: the shot query first, scene context after."""
-    context = " ".join(keywords(clip_idea, 6))
-    return f"{query}, {context}, {IMAGE_STYLE}" if context else f"{query}, {IMAGE_STYLE}"
+def image_prompt(query: str, clip_idea: str, look: list[str] | None = None) -> str:
+    """
+    Prompt for the image model: shot query first, scene context, then the
+    creator's look words (personalised only), then the fixed quality suffix.
+    """
+    parts = [query, " ".join(keywords(clip_idea, 6)), ", ".join(look or []), IMAGE_STYLE]
+    return ", ".join(p for p in parts if p)

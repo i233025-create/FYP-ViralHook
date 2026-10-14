@@ -48,8 +48,8 @@ export default function ExperiencedCreatorScreen() {
       })
       setProfile(p)
       setPhase('done')
-    } catch {
-      setError('Processing failed. Please try again.')
+    } catch (err) {
+      setError(err?.message || 'Processing failed. Please try again.')
       setPhase('form')
     }
   }

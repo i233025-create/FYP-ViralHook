@@ -4,13 +4,16 @@ evaluator.py — Measured evaluation of a rendered video
 No LLM judging. The finished MP4 is measured with the *same instruments*
 Module 2 used on the creator's real videos, then compared with the profile:
 
-  pacing_match      PySceneDetect avg shot duration  vs visual_analysis.mean_avg_shot_duration
-  speech_rate_match librosa duration + transcript wpm vs audio_analysis.mean_speech_rate_wpm
-  style_fidelity    mean of the two                    (None if the profile has no targets)
+  pacing_match      PySceneDetect avg shot duration   vs visual_analysis.mean_avg_shot_duration
+  speech_rate_match librosa duration + transcript wpm  vs audio_analysis.mean_speech_rate_wpm
+  visual_match      CLIP(mean of rendered frames) · creator centroid, divided by the
+                    creator's own leave-one-out similarity (how alike their videos are
+                    to each other) and capped at 1.0
+  style_fidelity    mean of the available matches above (None if none measurable)
 
   clip_alignment    CLIP cosine of each shot's middle frame vs its scene's clip_idea
-                    (raw cosine, reported separately — not folded into style_fidelity;
-                    placeholder shots excluded, None if every shot is a placeholder)
+                    (raw cosine, reported separately — topic, not style; placeholder
+                    shots excluded, None if every shot is a placeholder)
 
 Similarity is ratio-based: 1.0 when equal, falling to 0.0 when the measured
 value is TOLERANCE× off in either direction (|ln(measured/target)| / ln 3).
@@ -89,41 +92,59 @@ def extract_midframes(video_path: str, timeline: Timeline, out_dir: str | Path) 
     return frames
 
 
-def clip_alignment(frames: list[tuple[str, str]], scorer) -> dict | None:
+def frame_scores(frames: list[tuple[str, str]], scorer, creator=None) -> tuple[dict | None, dict | None]:
+    """(clip_alignment, visual) from one CLIP pass over the shot frames."""
     if not frames or scorer is None:
-        return None
+        return None, None
     try:
-        per_shot = [scorer.score([path], text)[0] for path, text in frames]
+        emb = scorer.image_embeddings([path for path, _ in frames])
+        texts = sorted({text for _, text in frames})
+        text_emb = dict(zip(texts, scorer.text_embeddings(texts)))
     except Exception as e:
-        print(f"[VideoEvaluator] CLIP alignment unavailable: {e}")
-        return None
-    return {"mean": round(sum(per_shot) / len(per_shot), 4), "per_shot": per_shot}
+        print(f"[VideoEvaluator] CLIP unavailable: {e}")
+        return None, None
+
+    per_shot = [round(float(e @ text_emb[text]), 4) for e, (_, text) in zip(emb, frames)]
+    alignment = {"mean": round(sum(per_shot) / len(per_shot), 4), "per_shot": per_shot}
+    if creator is None:
+        return alignment, None
+
+    similarity = round(float(creator.similarity(emb.mean(axis=0))[0]), 4)
+    reference = creator.self_similarity()
+    visual = {"creator_similarity": similarity, "creator_self_similarity": reference,
+              "talking_head_pct_creator": creator.talking_head_pct}
+    return alignment, visual
 
 
 def evaluate(video_path: str | Path, timeline: Timeline, profile: dict, work_dir: str | Path,
              clean_video: str | Path | None = None,
              measure: Callable[[str, str], dict] = measure_video,
-             scorer=None) -> dict:
+             scorer=None, creator=None) -> dict:
     """
-    Measure `video_path` against the creator profile.
-    `clean_video` (the render before captions) is used for CLIP frames so
-    burned-in text doesn't bias the alignment score.
+    Measure `video_path` against the creator profile (and, with `creator`, the
+    creator's Module 2 visual vectors). `clean_video` (the render before
+    captions) is used for CLIP frames so burned-in text doesn't bias scores.
     """
     transcript = " ".join(sc.voiceover for sc in timeline.scenes)
     measured = measure(str(video_path), transcript)
     targets = profile_targets(profile or {})
 
-    scores = {
-        "pacing_match": ratio_similarity(measured.get("avg_shot_duration"), targets["avg_shot_duration"]),
-        "speech_rate_match": ratio_similarity(measured.get("speech_rate_wpm"), targets["speech_rate_wpm"]),
-    }
-    available = [v for v in scores.values() if v is not None]
-    scores["style_fidelity"] = round(sum(available) / len(available), 4) if available else None
-
     if scorer is None:
         from .assets import ClipScorer
         scorer = ClipScorer()
     frames = extract_midframes(str(clean_video or video_path), timeline, Path(work_dir) / "eval_frames")
+    alignment, visual = frame_scores(frames, scorer, creator)
+
+    scores = {
+        "pacing_match": ratio_similarity(measured.get("avg_shot_duration"), targets["avg_shot_duration"]),
+        "speech_rate_match": ratio_similarity(measured.get("speech_rate_wpm"), targets["speech_rate_wpm"]),
+        "visual_match": None,
+    }
+    if visual and visual["creator_self_similarity"]:
+        ratio = visual["creator_similarity"] / visual["creator_self_similarity"]
+        scores["visual_match"] = round(min(1.0, max(0.0, ratio)), 4)
+    available = [v for v in scores.values() if v is not None]
+    scores["style_fidelity"] = round(sum(available) / len(available), 4) if available else None
 
     sources = Counter(shot.asset.source for sc in timeline.scenes for shot in sc.shots if shot.asset)
     return {
@@ -131,7 +152,8 @@ def evaluate(video_path: str | Path, timeline: Timeline, profile: dict, work_dir
         "measured": measured,
         "target": targets,
         "scores": scores,
-        "clip_alignment": clip_alignment(frames, scorer),
+        "visual": visual,
+        "clip_alignment": alignment,
         "asset_sources": dict(sources),
     }
 
@@ -139,7 +161,7 @@ def evaluate(video_path: str | Path, timeline: Timeline, profile: dict, work_dir
 def compare(personalised: dict, generic: dict) -> dict:
     """Side-by-side deltas (personalised − generic) for every shared score."""
     rows = {}
-    for key in ("pacing_match", "speech_rate_match", "style_fidelity"):
+    for key in ("pacing_match", "speech_rate_match", "visual_match", "style_fidelity"):
         p, g = personalised["scores"].get(key), generic["scores"].get(key)
         rows[key] = {"personalised": p, "generic": g,
                      "delta": round(p - g, 4) if p is not None and g is not None else None}

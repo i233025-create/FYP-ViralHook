@@ -11,6 +11,7 @@ this creator's own videos are:
   audio_analysis.energy_label                    → zoom_strength
   audio_analysis.mean_pause_density              → scene_gap
   visual_style_suggestions mention text/captions → caption_style = karaoke
+  Module 2 CLIP vectors (creator_visual.py)      → visual_look + creator_weight
 
 The GENERIC baseline uses fixed template-editor defaults and ignores the
 profile entirely. Comparing the two in evaluator.py is the ablation that shows
@@ -44,6 +45,10 @@ ENERGY_ZOOM = {
     "flat": 0.04,
 }
 CAPTION_HINTS = ("text", "caption", "subtitle", "overlay", "kinetic")
+# rank = clip_text + CREATOR_WEIGHT · clip_creator (assets.py). Text scores between
+# candidates differ by ~0.03 and creator scores by ~0.05, so 0.5 lets the creator's
+# look break ties between on-topic shots without overriding the topic.
+CREATOR_WEIGHT = 0.5
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -101,8 +106,12 @@ def _caption_style(profile: dict, sources: dict) -> str:
     return "scene"
 
 
-def plan_style(profile: dict | None, mode: str = "personalised") -> StyleParams:
-    """Return the edit parameters for `mode` ('personalised' or 'generic')."""
+def plan_style(profile: dict | None, mode: str = "personalised",
+               visual_look: list[str] | None = None, has_creator_visual: bool = False) -> StyleParams:
+    """
+    Return the edit parameters for `mode` ('personalised' or 'generic').
+    `visual_look` / `has_creator_visual` come from creator_visual.py (Module 2 vectors).
+    """
     if mode == "generic":
         return GENERIC.model_copy(deep=True)
     if mode != "personalised":
@@ -110,6 +119,11 @@ def plan_style(profile: dict | None, mode: str = "personalised") -> StyleParams:
 
     profile = profile or {}
     sources: dict = {}
+    if has_creator_visual:
+        sources["visual_look"] = "CLIP zero-shot on Module 2 creator video vectors"
+        sources["creator_weight"] = "Module 2 creator CLIP centroid available"
+    else:
+        sources["visual_look"] = sources["creator_weight"] = "no Module 2 visual vectors"
     return StyleParams(
         mode="personalised",
         shot_duration=_shot_duration(profile, sources),
@@ -117,5 +131,7 @@ def plan_style(profile: dict | None, mode: str = "personalised") -> StyleParams:
         zoom_strength=_zoom_strength(profile, sources),
         caption_style=_caption_style(profile, sources),
         scene_gap=_scene_gap(profile, sources),
+        visual_look=list(visual_look or []) if has_creator_visual else [],
+        creator_weight=CREATOR_WEIGHT if has_creator_visual else 0.0,
         sources=sources,
     )

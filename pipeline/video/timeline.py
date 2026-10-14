@@ -43,6 +43,10 @@ class StyleParams(BaseModel):
     zoom_strength: float = Field(description="Ken Burns zoom/pan amount, 0.0–0.3")
     caption_style: Literal["karaoke", "scene"]
     scene_gap: float = Field(description="Silence between scenes, seconds")
+    visual_look: list[str] = Field(
+        default_factory=list, description="Creator look words added to image prompts")
+    creator_weight: float = Field(
+        default=0.0, description="Weight of creator-look similarity when ranking shots")
     sources: dict = Field(default_factory=dict,
                           description="Which profile fields produced each value")
 
@@ -66,7 +70,8 @@ class Asset(BaseModel):
     kind: Literal["video", "image"]
     source: Literal["pexels", "sdxl", "placeholder"]
     query: str
-    clip_score: Optional[float] = None
+    clip_score: Optional[float] = None            # CLIP(asset, shot query)
+    creator_score: Optional[float] = None         # CLIP(asset) · creator centroid
     source_id: Optional[str] = None
     note: str = ""
 
@@ -218,7 +223,8 @@ def to_frontend(timeline: Timeline) -> list[dict]:
             "shots": [
                 {"start": sh.start, "end": sh.end, "query": sh.query,
                  "source": sh.asset.source if sh.asset else None,
-                 "clipScore": sh.asset.clip_score if sh.asset else None}
+                 "clipScore": sh.asset.clip_score if sh.asset else None,
+                 "creatorScore": sh.asset.creator_score if sh.asset else None}
                 for sh in sc.shots
             ],
         }
