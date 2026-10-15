@@ -7,9 +7,9 @@ import { NICHES } from '../../data/mockData'
 
 const PROCESS_STEPS = [
   { id: 1, label: 'Uploading videos' },
-  { id: 2, label: 'Extracting transcripts' },
+  { id: 2, label: 'Transcribing & extracting text style (Module 1)' },
   { id: 3, label: 'Building creator knowledge base' },
-  { id: 4, label: 'Analysing creator style patterns' },
+  { id: 4, label: 'Visual & audio analysis (Module 2)' },
   { id: 5, label: 'Generating creator profile' },
 ]
 
@@ -21,6 +21,7 @@ export default function ExperiencedCreatorScreen() {
   const [videos, setVideos] = useState([])
   const [phase, setPhase] = useState('form') // 'form' | 'processing' | 'done'
   const [currentStep, setCurrentStep] = useState(-1)
+  const [stepDetail, setStepDetail] = useState('')
   const [profile, setProfile] = useState(null)
   const [error, setError] = useState('')
 
@@ -28,7 +29,7 @@ export default function ExperiencedCreatorScreen() {
     const valid = Array.from(files).filter((f) => f.type.startsWith('video/'))
     if (!valid.length) { setError('Please upload video files only.'); return }
     setError('')
-    setVideos((v) => [...v, ...valid.map((f) => ({ id: crypto.randomUUID(), name: f.name, size: f.size }))])
+    setVideos((v) => [...v, ...valid.map((f) => ({ id: crypto.randomUUID(), file: f, name: f.name, size: f.size }))])
   }
 
   const removeVideo = (id) => setVideos((v) => v.filter((x) => x.id !== id))
@@ -43,8 +44,8 @@ export default function ExperiencedCreatorScreen() {
     setCurrentStep(0)
     try {
       const { profile: p } = await processCreatorVideos({
-        handle, niche,
-        onStep: (step) => setCurrentStep(step.id - 1),
+        files: videos.map((v) => v.file), handle, niche,
+        onStep: (step) => { setCurrentStep(step.id - 1); setStepDetail(step.detail || '') },
       })
       setProfile(p)
       setPhase('done')
@@ -113,7 +114,8 @@ export default function ExperiencedCreatorScreen() {
               </div>
             </div>
             <ProgressSteps steps={PROCESS_STEPS} currentStep={currentStep} />
-            <p className="text-discord-faint text-xs mt-6 text-center">This may take a moment…</p>
+            {stepDetail && <p className="text-discord-muted text-xs mt-4 text-center">{stepDetail}</p>}
+            <p className="text-discord-faint text-xs mt-6 text-center">Takes a few minutes per video — keep this tab open.</p>
           </div>
         </div>
       </div>

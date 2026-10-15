@@ -5,6 +5,8 @@ Endpoints:
 
   GET  /health
   GET  /onboarding/profile        → reads creator_profile.json → frontend profile shape
+  POST /onboarding/upload         → save videos, run Module 1 + 2 in background (returns job_id)
+  GET  /onboarding/status/{job_id}→ extraction progress
   POST /research/trends           → Research Agent: trending topics from real YouTube Shorts
   POST /script/generate           → Scripting Agent: 3 hook variants, measured evaluator
   POST /export/xml                → Premiere Pro XML from production plan
@@ -20,13 +22,16 @@ import os
 import sys
 import json
 import re
+import shutil
+import subprocess
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -232,6 +237,184 @@ def get_creator_profile(handle: str = "", niche: str = ""):
 
     profile = _raw_profile_to_frontend(raw, handle=handle, niche=niche)
     return {"profile": profile}
+
+
+# ── Profile extraction from uploaded videos ──────────────────────────────────
+# Upload replaces the current creator: the previous videos, ChromaDB and
+# profiles are moved to profiles_archive/<timestamp>/ so two creators never
+# mix in one knowledge base, and are restored if extraction fails. Module 1
+# and Module 2 run as their own CLI subprocesses (same output as running them
+# by hand) on the GPU worker thread shared with video renders.
+
+MODULE1_DIR = ROOT / "module1_style_extraction"
+MODULE2_DIR = ROOT / "module2_multimodal_rag"
+INPUT_VIDEOS_DIR = MODULE1_DIR / "input_videos"
+ARCHIVE_DIR = ROOT / "profiles_archive"
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+MAX_UPLOAD_VIDEOS = 10
+
+# Everything that belongs to one creator, relative to ROOT
+CREATOR_ARTIFACTS = [
+    "module1_style_extraction/input_videos",
+    "module1_style_extraction/chroma_db",
+    "module1_style_extraction/creator_profile.json",
+    "module2_multimodal_rag/creator_profile_multimodal.json",
+    "module2_multimodal_rag/qdrant_snapshot.json",
+]
+
+PROFILE_STEPS = [
+    {"id": 1, "label": "Uploading videos"},
+    {"id": 2, "label": "Transcribing & extracting text style (Module 1)"},
+    {"id": 3, "label": "Building creator knowledge base"},
+    {"id": 4, "label": "Visual & audio analysis (Module 2)"},
+    {"id": 5, "label": "Generating creator profile"},
+]
+
+_profile_jobs: dict = {}
+_profile_lock = threading.Lock()
+
+
+def _update_profile_job(job_id: str, **fields):
+    with _profile_lock:
+        _profile_jobs[job_id].update(fields)
+
+
+def _archive_creator(stamp: str) -> Path:
+    """Move the current creator's artifacts to profiles_archive/<stamp>/."""
+    dest = ARCHIVE_DIR / stamp
+    for rel in CREATOR_ARTIFACTS:
+        src = ROOT / rel
+        if src.exists():
+            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dest / rel))
+    return dest
+
+
+def _restore_creator(archive: Path):
+    """Undo a failed extraction: park its partial output, bring the old creator back."""
+    failed = archive.with_name(archive.name + "_failed")
+    for rel in CREATOR_ARTIFACTS:
+        cur, old = ROOT / rel, archive / rel
+        if cur.exists():
+            (failed / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(cur), str(failed / rel))
+        if old.exists():
+            shutil.move(str(old), str(cur))
+
+
+# Module 1 prints "STAGE 2 — Profile Extraction (Video 1/3)"; Module 2 prints
+# a rule "Video 1/3: name.mp4" per video and "Synthesising ..." at the end.
+_M1_STAGE = re.compile(r"STAGE (\d) — ([^(\n]+?)\s*\(Video (\d+)/(\d+)\)")
+_M2_VIDEO = re.compile(r"Video (\d+)/(\d+): (\S+)")
+
+
+def _run_module(job_id: str, cmd: list, cwd: Path, on_line):
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", "COLUMNS": "200", "NO_COLOR": "1"}
+    log = []
+    proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, text=True, encoding="utf-8",
+                            errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for line in proc.stdout:
+        line = line.rstrip()
+        if not line:
+            continue
+        log = (log + [line])[-40:]
+        _update_profile_job(job_id, log=log)
+        on_line(line)
+    if proc.wait() != 0:
+        tail = "\n".join(log[-8:])
+        raise RuntimeError(f"{cmd[-1]} exited with code {proc.returncode}:\n{tail}")
+
+
+def _run_profile_job(job_id: str, archive: Path):
+    _update_profile_job(job_id, status="running", step=2, stepLabel=PROFILE_STEPS[1]["label"],
+                        detail="Loading Whisper + LLM…")
+
+    def module1_line(line: str):
+        m = _M1_STAGE.search(line)
+        if m:
+            stage, name, i, n = m.groups()
+            step = 3 if stage == "3" else 2
+            _update_profile_job(job_id, step=step, stepLabel=PROFILE_STEPS[step - 1]["label"],
+                                detail=f"Video {i}/{n} — {name.strip()}")
+        elif "STAGE 4" in line:
+            _update_profile_job(job_id, step=3, stepLabel=PROFILE_STEPS[2]["label"],
+                                detail="RAG synthesis of the text profile")
+
+    def module2_line(line: str):
+        m = _M2_VIDEO.search(line)
+        if m:
+            i, n, name = m.groups()
+            _update_profile_job(job_id, step=4, stepLabel=PROFILE_STEPS[3]["label"],
+                                detail=f"Video {i}/{n} — {name} (CLIP, shots, audio)")
+        elif "Synthesising Multimodal" in line:
+            _update_profile_job(job_id, step=5, stepLabel=PROFILE_STEPS[4]["label"],
+                                detail="Merging text + visual + audio stats")
+
+    try:
+        _run_module(job_id, [sys.executable, "-u", "main.py"], MODULE1_DIR, module1_line)
+        _update_profile_job(job_id, step=4, stepLabel=PROFILE_STEPS[3]["label"],
+                            detail="Loading CLIP…")
+        _run_module(job_id, [sys.executable, "-u", "module2_multimodal_rag/main.py"], ROOT,
+                    module2_line)
+        if not PROFILE_PATH.exists():
+            raise RuntimeError("Module 1 finished but creator_profile.json was not written.")
+        _update_profile_job(job_id, status="done", step=len(PROFILE_STEPS), detail="")
+    except Exception as e:
+        _restore_creator(archive)
+        _update_profile_job(job_id, status="error",
+                            error=f"{e}\n(Previous creator profile restored.)")
+
+
+@app.post("/onboarding/upload")
+def onboarding_upload(files: List[UploadFile] = File(...),
+                      handle: str = Form(""), niche: str = Form("")):
+    """
+    POST /onboarding/upload  multipart: files[], handle, niche
+
+    Saves the videos as the new creator's input_videos/ and starts Module 1 +
+    Module 2 in the background. Poll /onboarding/status/{job_id}; when done,
+    GET /onboarding/profile returns the freshly extracted profile.
+    """
+    videos = [f for f in files if Path(f.filename or "").suffix.lower() in VIDEO_EXTENSIONS]
+    if not videos:
+        raise HTTPException(status_code=400, detail="Upload at least one video "
+                            f"({', '.join(sorted(VIDEO_EXTENSIONS))}).")
+    if len(videos) > MAX_UPLOAD_VIDEOS:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_VIDEOS} videos.")
+    with _profile_lock:
+        if any(j["status"] in ("queued", "running") for j in _profile_jobs.values()):
+            raise HTTPException(status_code=409, detail="A profile extraction is already running.")
+        job_id = uuid.uuid4().hex[:12]
+        _profile_jobs[job_id] = {"jobId": job_id, "status": "queued", "step": 1,
+                                 "stepLabel": PROFILE_STEPS[0]["label"], "detail": "",
+                                 "steps": PROFILE_STEPS, "log": [],
+                                 "handle": handle, "niche": niche}
+
+    archive = _archive_creator(time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        INPUT_VIDEOS_DIR.mkdir(parents=True)
+        for i, up in enumerate(videos, start=1):
+            safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(up.filename).name)
+            with open(INPUT_VIDEOS_DIR / f"{i:02d}_{safe}", "wb") as out:
+                shutil.copyfileobj(up.file, out)
+    except Exception as e:
+        _restore_creator(archive)
+        _update_profile_job(job_id, status="error", error=f"Saving uploads failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Saving uploads failed: {e}")
+    _update_profile_job(job_id, detail=f"{len(videos)} video(s) saved")
+
+    _video_executor.submit(_run_profile_job, job_id, archive)
+    return {"jobId": job_id, "steps": PROFILE_STEPS}
+
+
+@app.get("/onboarding/status/{job_id}")
+def onboarding_status(job_id: str):
+    """Progress (step, detail, last log lines); status done → fetch /onboarding/profile."""
+    with _profile_lock:
+        job = dict(_profile_jobs.get(job_id) or {})
+    if not job:
+        raise HTTPException(status_code=404, detail="Unknown profile job.")
+    return job
 
 
 # ── Task 2: Research (real YouTube Shorts data) ───────────────────────────────

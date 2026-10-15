@@ -157,6 +157,7 @@ class AssetResolver:
         self.image_candidates = max(1, image_candidates or int(
             os.getenv("VIDEO_IMAGE_CANDIDATES", DEFAULT_IMAGE_CANDIDATES)))
         self._scorer_failed = False
+        self._image_gen_retried = False
 
     def _scorer(self) -> ClipScorer | None:
         if self._scorer_failed:
@@ -238,6 +239,13 @@ class AssetResolver:
                     self.image_gen.generate(prompt, path, seed=base_seed + k)
                 paths.append(str(path))
         except Exception as e:   # model download, CUDA OOM, missing deps
+            if not self._image_gen_retried and not isinstance(e, ImageGenError):
+                # Usually CUDA OOM because another process (Ollama, a second job)
+                # holds VRAM: free what we can and try once more before giving up
+                self._image_gen_retried = True
+                print(f"[Assets] Image generation failed ({e}); freeing GPU memory and retrying")
+                self._free_gpu()
+                return self._from_image_gen(query, prompt, creator, weight)
             print(f"[Assets] Image generation unavailable ({e}); using placeholder")
             self.use_image_gen = False
             if not paths:
@@ -263,6 +271,21 @@ class AssetResolver:
         path = make_placeholder(query, self.cache_dir / "placeholder" / f"{_key(query)}.png")
         return Asset(path=str(path), kind="image", source="placeholder", query=query,
                      note="no stock match and no image model available")
+
+    def _free_gpu(self):
+        """Unload Ollama and the half-loaded SDXL pipeline, then empty the CUDA cache."""
+        from pipeline.local_llm import release_gpu
+
+        release_gpu()
+        if isinstance(self.image_gen, SDXLLightning):
+            self.image_gen.unload()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
 
     def release(self):
         """Free GPU memory held by the image model."""

@@ -83,3 +83,6 @@ logs/
 # ── Zip archives ──────────────────────────────────────────────────────────────
 *.zip
 frontend.zip
+
+# Archived creators (videos, ChromaDB, profiles) from UI uploads
+profiles_archive/

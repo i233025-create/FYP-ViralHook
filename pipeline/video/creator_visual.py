@@ -28,6 +28,9 @@ SNAPSHOT = ROOT / "module2_multimodal_rag" / "qdrant_snapshot.json"
 
 # One pick per group keeps the description coherent (never "warm" and "cool")
 LOOK_VOCAB = {
+    # What the footage IS — decides "photorealistic" vs a stylised SDXL render
+    "medium": ["photorealistic photo", "3D animated render", "flat 2D illustration",
+               "anime illustration", "screen recording of software"],
     "lighting": ["warm golden light", "cool blue light", "dark moody low-key lighting",
                  "bright high-key lighting", "soft natural daylight"],
     "colour": ["vibrant saturated colours", "muted desaturated colours", "black and white",
@@ -36,6 +39,7 @@ LOOK_VOCAB = {
                 "office or desk workspace"],
 }
 LOOK_TEMPLATE = "a photo with {}"
+MEDIUM_TEMPLATE = "a video frame, {}"
 
 
 def _normalize(v: np.ndarray) -> np.ndarray:
@@ -84,7 +88,33 @@ def load_creator_visual(path: str | Path = SNAPSHOT) -> CreatorVisual | None:
 def describe_look(creator: CreatorVisual, scorer) -> list[str]:
     """Best-matching look phrase per vocabulary group, e.g. ['warm golden light', ...]."""
     picks = []
-    for terms in LOOK_VOCAB.values():
-        text = scorer.text_embeddings([LOOK_TEMPLATE.format(t) for t in terms])
+    for group, terms in LOOK_VOCAB.items():
+        template = MEDIUM_TEMPLATE if group == "medium" else LOOK_TEMPLATE
+        text = scorer.text_embeddings([template.format(t) for t in terms])
         picks.append(terms[int(np.argmax(text @ creator.centroid))])
     return picks
+
+
+# Measured luma (Module 2 tone_analyzer) → lighting words. CLIP zero-shot can't
+# tell dark stylised footage from bright footage reliably; pixels can.
+BRIGHTNESS_LIGHTING = [
+    (0.22, "dark moody low-key lighting, dark background, night"),
+    (0.38, "dim moody lighting"),
+    (0.60, None),                     # mid: keep CLIP's pick
+    (1.01, "bright high-key lighting"),
+]
+
+
+def apply_measured_tone(look: list[str], visual_analysis: dict | None) -> list[str]:
+    """Replace CLIP's lighting pick with the measured one; add the creator's accent colour."""
+    va = visual_analysis or {}
+    brightness = va.get("mean_brightness")
+    if brightness is None:
+        return look
+    lighting = next(words for bound, words in BRIGHTNESS_LIGHTING if brightness < bound)
+    out = list(look)
+    if lighting:
+        out = [lighting] + [t for t in out if t not in LOOK_VOCAB["lighting"]]
+    if va.get("accent_colour"):
+        out.append(f"{va['accent_colour']} neon accent lights")
+    return out

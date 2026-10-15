@@ -221,6 +221,36 @@ class TestAssets:
         resolver = self._pexels(tmp_path, monkeypatch, images)
         assert resolver.resolve("q", creator=CREATOR, creator_weight=5.0).source_id == "2"
 
+    def test_image_gen_retries_once_after_freeing_gpu(self, tmp_path, monkeypatch):
+        class FlakyGen:
+            calls = 0
+
+            def generate(self, prompt, path, seed=None):
+                FlakyGen.calls += 1
+                if FlakyGen.calls == 1:
+                    raise RuntimeError("CUDA out of memory")
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                Path(path).write_bytes(b"png")
+
+        resolver = AssetResolver(tmp_path, pexels_key="", scorer=FakeScorer(), image_gen=FlakyGen(),
+                                 use_image_gen=True, image_candidates=1)
+        freed = []
+        monkeypatch.setattr(resolver, "_free_gpu", lambda: freed.append(True))
+        assert resolver.resolve("q", "prompt").source == "sdxl"   # not a placeholder
+        assert freed == [True]
+        assert resolver.resolve("q2", "prompt 2").source == "sdxl"   # image gen still on
+
+    def test_image_gen_gives_up_after_second_failure(self, tmp_path, monkeypatch):
+        class BrokenGen:
+            def generate(self, prompt, path, seed=None):
+                raise RuntimeError("CUDA out of memory")
+
+        resolver = AssetResolver(tmp_path, pexels_key="", scorer=FakeScorer(), image_gen=BrokenGen(),
+                                 use_image_gen=True, image_candidates=1)
+        monkeypatch.setattr(resolver, "_free_gpu", lambda: None)
+        assert resolver.resolve("q", "prompt").source == "placeholder"
+        assert resolver.use_image_gen is False
+
     def test_image_candidates_ranked_same_count_both_modes(self, tmp_path):
         scorer = FakeScorer()
 

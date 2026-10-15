@@ -14,6 +14,10 @@ rounding never drifts the picture away from the voiceover.
 
 Captions:
   karaoke : 1–3 word chunks, current word highlighted (creator uses text overlays)
+            With a measured caption_look (Module 2 OCR) the position, size, colours,
+            box, case, chunk length and accent follow the creator's own captions:
+            accent_mode 'word' highlights the spoken word, 'line' shows plain
+            phrases and puts every other sentence in the accent colour.
   scene   : the scene's caption line for the whole scene (generic template)
 
 Config (.env, optional):
@@ -80,8 +84,55 @@ def chunk_words(words: list, size: int = KARAOKE_WORDS) -> list[list]:
     return chunks
 
 
+def _norm(token: str) -> str:
+    return re.sub(r"[^\w']", "", token).lower()
+
+
+def punctuate(words: list, script: str) -> list:
+    """Restore the script's punctuation on aligned words (TTS/ASR timings drop it),
+    so chunking and sentence alternation see real sentence ends."""
+    tokens = [t for t in script.split() if _norm(t)]
+    out, ti = [], 0
+    for w in words:
+        for j in range(ti, min(ti + 4, len(tokens))):   # small lookahead absorbs ASR splits/merges
+            if _norm(tokens[j]) == _norm(w.word):
+                tail = re.search(r"[.!?,;:]+$", tokens[j])
+                if tail and not re.search(r"[.!?,;:]$", w.word):
+                    w = w.model_copy(update={"word": w.word + tail.group()})
+                ti = j + 1
+                break
+        out.append(w)
+    return out
+
+
+def caption_font(look: dict | None) -> str:
+    """VIDEO_CAPTION_FONT, else Inter for measured (modern creator) captions if installed."""
+    if os.getenv("VIDEO_CAPTION_FONT"):
+        return os.getenv("VIDEO_CAPTION_FONT")
+    if look and shutil.which("fc-list"):
+        found = subprocess.run(["fc-list", "Inter:style=SemiBold", "family"],
+                               capture_output=True, text=True).stdout
+        if found.strip():
+            return "Inter SemiBold" if "Inter SemiBold" in found else "Inter"
+    return "DejaVu Sans"
+
+
+def karaoke_style(font: str, look: dict | None) -> str:
+    """ASS style line: template look, or the creator's measured caption look."""
+    if not look:
+        return f"Style: Karaoke,{font},92,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,80,80,560,1"
+    if look["boxed"]:   # opaque box behind the text, like the creator's
+        border, outline, shadow, outline_col, back = 3, round(look["font_size"] * 0.18), 0, look["box"], look["box"]
+    else:               # text straight on footage: thin dark edge + soft shadow keeps it legible
+        border, outline, shadow, outline_col, back = 1, max(2, round(look["font_size"] * 0.05)), 2, \
+            "&H50000000", "&H64000000"
+    return (f"Style: Karaoke,{font},{look['font_size']},{look['primary']},&H000000FF,{outline_col},{back},"
+            f"-1,0,0,0,100,100,0,0,{border},{outline},{shadow},2,80,80,{look['margin_v']},1")
+
+
 def build_ass(timeline: Timeline) -> str:
-    font = os.getenv("VIDEO_CAPTION_FONT", "DejaVu Sans")
+    look = timeline.style.caption_look
+    font = caption_font(look)
     w, h = timeline.width, timeline.height
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -94,13 +145,14 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, \
 Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, \
 MarginV, Encoding
-Style: Karaoke,{font},92,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,80,80,560,1
+{karaoke_style(font, look)}
 Style: Scene,{font},70,&H00FFFFFF,&H000000FF,&H00000000,&H8C000000,-1,0,0,0,100,100,0,0,3,16,0,8,90,90,260,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     lines = []
+    sentence = 0          # running sentence count, for 'line' accent alternation
     for scene in timeline.scenes:
         if timeline.style.caption_style == "scene":
             if scene.caption:
@@ -108,17 +160,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                              f"{ass_escape(scene.caption)}")
             continue
 
-        chunks = chunk_words(scene.voice.words)
+        chunks = chunk_words(punctuate(scene.voice.words, scene.voiceover),
+                             look["words_per_chunk"] if look else KARAOKE_WORDS)
+        mode = look.get("accent_mode") if look else "word"
+        highlight = (look["accent"] + "&" if look else HIGHLIGHT) if mode else None
+        primary = look["primary"] + "&" if look else "&H00FFFFFF&"
+        upper = look["uppercase"] if look else True
         for ci, chunk in enumerate(chunks):
             next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else scene.end - scene.start
-            texts = [ass_escape(w.word).upper() for w in chunk]
+            texts = [ass_escape(w.word).upper() if upper else ass_escape(w.word) for w in chunk]
+            if mode != "word":   # creator shows plain phrases, no per-word highlight
+                end = scene.start + min(next_start, chunk[-1].end + 0.35)
+                colour = f"{{\\c{highlight}}}" if mode == "line" and sentence % 2 else ""
+                lines.append(f"Dialogue: 0,{ass_time(scene.start + chunk[0].start)},{ass_time(end)},"
+                             f"Karaoke,,0,0,0,,{colour}{' '.join(texts)}")
+                if re.search(r"[.!?]$", chunk[-1].word):
+                    sentence += 1
+                continue
             for wi, word in enumerate(chunk):
                 start = scene.start + word.start
                 end = scene.start + (chunk[wi + 1].start if wi + 1 < len(chunk)
                                      else min(next_start, word.end + 0.35))
                 if end <= start:
                     continue
-                shown = " ".join(f"{{\\c{HIGHLIGHT}}}{t}{{\\c&H00FFFFFF&}}" if i == wi else t
+                shown = " ".join(f"{{\\c{highlight}}}{t}{{\\c{primary}}}" if i == wi else t
                                  for i, t in enumerate(texts))
                 lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Karaoke,,0,0,0,,{shown}")
     return header + "\n".join(lines) + "\n"

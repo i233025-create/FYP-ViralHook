@@ -126,6 +126,11 @@ def main():
             for err in result["errors"]:
                 console.print(f"    · {err}")
 
+    if not any(any(r.get("visual_vector") or []) for r in all_results):
+        console.print("[red]✗ Visual (CLIP) branch failed for every video — refusing to save "
+                      "zero vectors. See the errors above.[/red]")
+        sys.exit(1)
+
     # ── Build master multimodal profile ───────────────────────────────────────
     console.rule("[bold cyan]Synthesising Multimodal Creator Profile[/bold cyan]")
     console.print("Running RAG over stored profiles + aggregating multimodal stats...")

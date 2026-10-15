@@ -312,7 +312,7 @@ def main() -> None:
         # ── STAGE 2: Per-Video Profile Extraction ─────────────────────────────
         console.print(
             f"\n[bold cyan]▶ STAGE 2 — Profile Extraction[/bold cyan] "
-            f"[dim](Video {idx}/{len(SAMPLE_VIDEO_URLS)})[/dim]"
+            f"[dim](Video {idx}/{len(video_sources)})[/dim]"
         )
 
         try:
@@ -421,7 +421,7 @@ def main() -> None:
     console.print()
     console.print(Panel(
         f"  [bold white]Pipeline completed successfully![/bold white]\n\n"
-        f"  Videos processed:    [cyan]{len(per_video_profiles)}/{len(SAMPLE_VIDEO_URLS)}[/cyan]\n"
+        f"  Videos processed:    [cyan]{len(per_video_profiles)}/{len(video_sources)}[/cyan]\n"
         f"  Creator niche:       [cyan]{creator_profile.get('creator_niche', 'N/A')}[/cyan]\n"
         f"  Dominant tone:       [cyan]{creator_profile.get('dominant_tone', 'N/A')}[/cyan]\n"
         f"  Avg pacing:          [cyan]{creator_profile.get('avg_pacing', 'N/A')}[/cyan]\n"

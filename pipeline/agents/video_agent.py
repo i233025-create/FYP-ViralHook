@@ -47,7 +47,7 @@ from pipeline.video import renderer                                   # noqa: E4
 from pipeline.local_llm import release_gpu                             # noqa: E402
 from pipeline.video.assets import AssetResolver                       # noqa: E402
 from pipeline.video.creator_visual import (                           # noqa: E402
-    CreatorVisual, describe_look, load_creator_visual,
+    CreatorVisual, apply_measured_tone, describe_look, load_creator_visual,
 )
 from pipeline.video.evaluator import compare, evaluate                # noqa: E402
 from pipeline.video.shot_planner import image_prompt, plan_queries    # noqa: E402
@@ -118,7 +118,8 @@ def generate_video(script, profile: dict, mode: str = "personalised",
     look = []
     if mode == "personalised" and creator is not None and resolver._scorer() is not None:
         try:
-            look = describe_look(creator, resolver.scorer)
+            look = apply_measured_tone(describe_look(creator, resolver.scorer),
+                                       profile.get("visual_analysis"))
         except Exception as e:   # CLIP missing → still personalise cuts/pace
             print(f"[VideoAgent] Creator look unavailable: {e}")
     style = plan_style(profile, mode, visual_look=look, has_creator_visual=creator is not None)
@@ -134,15 +135,20 @@ def generate_video(script, profile: dict, mode: str = "personalised",
 
     # 3. Shots
     tracks, shot_index = [], 0
+    # SDXL Lightning can't be steered away from people (no CFG) and draws them
+    # deformed, so shots are object/place-only unless VIDEO_ALLOW_PEOPLE=1
+    people = os.getenv("VIDEO_ALLOW_PEOPLE", "0").strip().lower() in ("1", "true", "yes")
     niche = profile.get("creator_niche", "")
     for i, (sc, voice, (start, end)) in enumerate(zip(scenes, voices, windows)):
         step(3, f"scene {i + 1}/{len(scenes)}")
         bounds = split_shots(start, end, style.shot_duration)
-        queries, _ = plan_queries(sc["clip_idea"], sc["voiceover"], len(bounds), niche, use_llm=use_llm)
+        queries, _ = plan_queries(sc["clip_idea"], sc["voiceover"], len(bounds), niche,
+                                  use_llm=use_llm, people=people)
         shots = []
         for (s, e), q in zip(bounds, queries):
             shots.append(Shot(start=s, end=e, query=q,
-                              image_prompt=image_prompt(q, sc["clip_idea"], style.visual_look),
+                              image_prompt=image_prompt(q, sc["clip_idea"], style.visual_look,
+                                                        people=people),
                               motion=motion_for(shot_index)))
             shot_index += 1
         tracks.append(SceneTrack(scene_id=i + 1, segment=sc["segment"], start=start, end=end,

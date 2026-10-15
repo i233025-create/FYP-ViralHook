@@ -132,6 +132,9 @@ def embed_frames(frame_paths: list[str], batch_size: int = 16) -> np.ndarray:
             else:
                 features = model.encode_image(image_tensor)
 
+            # autocast returns fp16 on CUDA; keep embeddings fp32 so they match
+            # the fp32 text embeddings (zero-shot) and downstream numpy maths
+            features = features.float()
             features = features / features.norm(dim=-1, keepdim=True)
 
         all_embeddings.append(features.cpu().numpy())
@@ -162,7 +165,7 @@ def classify_frames_talking_head(frame_embeddings: np.ndarray) -> float:
     text_emb = _get_text_embeddings()   # (2, 512) on device
 
     # Move frame embeddings to same device as text embeddings
-    frame_tensor = torch.from_numpy(frame_embeddings).to(_clip_device)  # (N, 512)
+    frame_tensor = torch.from_numpy(frame_embeddings).to(_clip_device, text_emb.dtype)  # (N, 512)
 
     # Cosine similarity: frame_tensor @ text_emb.T → (N, 2)
     with torch.no_grad():

@@ -42,6 +42,8 @@ class StyleParams(BaseModel):
         default=None, description="Voiceover speech rate to hit; None = TTS default speed")
     zoom_strength: float = Field(description="Ken Burns zoom/pan amount, 0.0–0.3")
     caption_style: Literal["karaoke", "scene"]
+    caption_look: Optional[dict] = Field(
+        default=None, description="Measured caption look (style_plan.caption_look); None = template")
     scene_gap: float = Field(description="Silence between scenes, seconds")
     visual_look: list[str] = Field(
         default_factory=list, description="Creator look words added to image prompts")

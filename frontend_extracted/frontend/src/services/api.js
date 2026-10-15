@@ -26,6 +26,7 @@ import {
 } from '../data/mockData'
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+const PROFILE_POLL_MS = 2000
 
 // ── Backend switch ─────────────────────────────────────────────────────────
 export const USE_REAL_BACKEND = import.meta.env.VITE_USE_REAL_BACKEND !== 'false'
@@ -84,39 +85,60 @@ export async function createNewCreatorProfile(formData) {
 }
 
 /**
- * GET /onboarding/profile
- * Video upload/transcription is CLI-based in the PoC (module1 + module2 main.py),
- * so the steps below only pace the UI; the profile itself is the REAL one the
- * backend built from the creator's videos. Throws if the backend has none.
+ * POST /onboarding/upload (videos + handle + niche) → poll GET /onboarding/status/{jobId}
+ * → GET /onboarding/profile. The backend saves the videos as the new creator,
+ * runs Module 1 (text RAG) + Module 2 (multimodal) and builds the REAL profile.
+ * onStep({ id, label, detail }) fires on every progress change.
  */
-export async function processCreatorVideos({ handle, niche, onStep }) {
-  const steps = [
-    { id: 1, label: 'Uploading videos', duration: 1200 },
-    { id: 2, label: 'Extracting transcripts', duration: 1500 },
-    { id: 3, label: 'Building creator knowledge base', duration: 1800 },
-    { id: 4, label: 'Analysing creator style patterns', duration: 2000 },
-    { id: 5, label: 'Generating creator profile', duration: 1200 },
-  ]
-  for (const step of steps) {
-    await delay(USE_REAL_BACKEND ? 300 : step.duration)
-    onStep(step)
-  }
-
+export async function processCreatorVideos({ files = [], handle, niche, onStep }) {
   if (USE_REAL_BACKEND) {
-    const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f, f.name))
+    form.append('handle', handle || '')
+    form.append('niche', niche || '')
+
     let res
     try {
-      res = await fetch(`${API_BASE}/onboarding/profile?${params}`)
+      res = await fetch(`${API_BASE}/onboarding/upload`, { method: 'POST', body: form })
     } catch (_) {
       throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `Profile request failed (${res.status})`)
+      throw new Error(err.detail || `Upload failed (${res.status})`)
     }
-    return { profile: (await res.json()).profile }
+    const { jobId } = await res.json()
+
+    for (;;) {
+      await delay(PROFILE_POLL_MS)
+      const r = await fetch(`${API_BASE}/onboarding/status/${jobId}`)
+      if (!r.ok) throw new Error(`Profile status error ${r.status}`)
+      const job = await r.json()
+      if (onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
+      if (job.status === 'error') throw new Error(job.error || 'Profile extraction failed')
+      if (job.status === 'done') break
+    }
+
+    const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
+    const p = await fetch(`${API_BASE}/onboarding/profile?${params}`)
+    if (!p.ok) {
+      const err = await p.json().catch(() => ({}))
+      throw new Error(err.detail || `Profile request failed (${p.status})`)
+    }
+    return { profile: (await p.json()).profile }
   }
 
+  const steps = [
+    { id: 1, label: 'Uploading videos', duration: 1200 },
+    { id: 2, label: 'Transcribing & extracting text style (Module 1)', duration: 1500 },
+    { id: 3, label: 'Building creator knowledge base', duration: 1800 },
+    { id: 4, label: 'Visual & audio analysis (Module 2)', duration: 2000 },
+    { id: 5, label: 'Generating creator profile', duration: 1200 },
+  ]
+  for (const step of steps) {
+    await delay(step.duration)
+    onStep(step)
+  }
   return { profile: MOCK_EXPERIENCED_CREATOR_PROFILE(handle, niche) }
 }
 

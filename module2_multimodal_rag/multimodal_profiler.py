@@ -34,6 +34,8 @@ from module2_multimodal_rag.frame_extractor import (
     get_video_duration,
 )
 from module2_multimodal_rag.visual_embedder import get_visual_features
+from module2_multimodal_rag.caption_analyzer import analyze_captions, aggregate_captions
+from module2_multimodal_rag.tone_analyzer import measure_tone, aggregate_tone
 from module2_multimodal_rag.scene_detector import (
     extract_shot_features,
     interpret_pacing,
@@ -89,6 +91,8 @@ def process_video(
         "broll_pct":         1.0,
         "shot_features":     {},
         "audio_features":    {},
+        "caption_analysis":  {},
+        "tone":              {},
         "errors":            [],
     }
 
@@ -159,6 +163,21 @@ def process_video(
         result["errors"].append(msg)
         print(f"{prefix} ERROR — {msg}")
         result["visual_vector"] = [0.0] * 512
+
+    # Captions and brightness/colour are measured on the same frames
+    try:
+        if frame_paths:
+            result["tone"] = measure_tone(frame_paths)
+            print(f"{prefix} Tone: brightness {result['tone']['brightness']:.2f} | "
+                  f"accent {result['tone']['accent_colour']}")
+            result["caption_analysis"] = analyze_captions(frame_paths, result.get("transcript", ""))
+            ca = result["caption_analysis"]
+            print(f"{prefix} Captions: {ca['caption_frame_ratio']*100:.0f}% of frames"
+                  + (f" | {ca['colour_counts']} at y={ca['y_center']:.2f}" if ca.get("lines_measured") else ""))
+    except Exception as e:
+        msg = f"Caption/tone analysis failed: {e}"
+        result["errors"].append(msg)
+        print(f"{prefix} ERROR — {msg}")
     finally:
         if temp_dir:
             cleanup_frames(temp_dir)
@@ -231,6 +250,8 @@ def process_video(
         "avg_energy":        af.get("avg_energy", 0.05),
         "speech_rate_label": interpret_speech_rate(af.get("speech_rate_wpm", 120.0)),
         "energy_label":      interpret_energy(af.get("energy_variance", 0.01)),
+        "caption_analysis":  result["caption_analysis"],
+        "visual_tone":       result["tone"],
     }
 
     result["payload"] = payload
@@ -342,6 +363,7 @@ def build_multimodal_creator_profile(
             "mean_cut_frequency":     mean_cut_freq,
             "visual_pacing":          interpret_pacing(mean_avg_shot_dur),
             "videos_analysed":        len(all_video_results),
+            **aggregate_tone([r.get("tone") for r in all_video_results]),
         },
         "audio_analysis": {
             "mean_speech_rate_wpm": mean_speech_rate,
@@ -350,6 +372,7 @@ def build_multimodal_creator_profile(
             "energy_label":         interpret_energy(mean_energy_var),
             "mean_pause_density":   mean_pause_den,
         },
+        "caption_analysis": aggregate_captions([r.get("caption_analysis") for r in all_video_results]),
         "per_video_profiles": [
             {
                 "video_id":       r["payload"].get("video_id"),
