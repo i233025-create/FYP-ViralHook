@@ -1,0 +1,11 @@
+# E1 retrieval experiment — separate from the main project's requirements.
+# CPU-only torch keeps the install small:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+torch>=2.2
+transformers>=4.41
+sentence-transformers>=3.0
+rank-bm25>=0.2.2
+faster-whisper>=1.0
+numpy>=1.24
+pytest>=8.0

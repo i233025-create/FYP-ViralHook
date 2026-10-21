@@ -1,0 +1,4 @@
+# Photos and labelled queries stay local.
+data/
+# Per-scene results list photo names and captions; the summary tables are fine to commit.
+results/*.json

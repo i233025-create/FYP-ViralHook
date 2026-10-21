@@ -1,0 +1,5 @@
+# Creator videos, captions and transcripts stay local (copyright + size).
+data/
+.venv/
+# Per-query results contain creators' captions and transcripts; the summary tables are fine to commit.
+results/*.json

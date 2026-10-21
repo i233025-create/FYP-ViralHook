@@ -1,0 +1,11 @@
+# E3 asset-retrieval experiment. Works in the same virtual environment as E1:
+#   pip install -r ../rag_e1/requirements.txt
+#   pip install -r requirements.txt
+torch>=2.2
+transformers>=4.50          # SigLIP 2 needs a recent transformers
+sentence-transformers>=3.0
+sentencepiece>=0.2          # SigLIP tokenizer
+protobuf>=4.25
+Pillow>=10.0
+numpy>=1.24
+pytest>=8.0
