@@ -29,7 +29,7 @@ scene query: "Students walking through the university main gate"
 |---|---|
 | R@1 / R@3 / R@5, MRR | How often a correct photo is 1st / in the top 3 / top 5 (scenes that have one) |
 | Distractor top-1 | How often a non-creator photo (e.g. another university's gate) wins — lower is better |
-| No-match AUC | Whether the best photo's score separates "a photo fits" from "nothing fits" (1.0 perfect, 0.5 coin flip) |
+| No-match AUC | Whether the best *creator* photo's score separates "a photo fits" from "nothing fits" (1.0 perfect, 0.5 coin flip). Distractors are excluded here: in the product the library holds only the creator's photos |
 | Threshold | The score below which the shot planner should fall back to stock / generation |
 | Per-category R@3 | Gate, lab, library, logo... — where each method is strong or weak |
 

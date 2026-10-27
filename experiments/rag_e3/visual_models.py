@@ -39,6 +39,16 @@ def _params_m(model) -> float:
     return round(sum(p.numel() for p in model.parameters()) / 1e6, 1)
 
 
+def _embeddings(output) -> np.ndarray:
+    """
+    get_image_features / get_text_features → numpy. transformers 4.x returns the
+    embedding tensor; 5.x returns a model output with it in `pooler_output`
+    (already projected for CLIP; SigLIP's pooled head output).
+    """
+    tensor = output if hasattr(output, "cpu") else output.pooler_output
+    return tensor.detach().cpu().numpy()
+
+
 def _normalize(x: np.ndarray) -> np.ndarray:
     return x / np.clip(np.linalg.norm(x, axis=-1, keepdims=True), 1e-9, None)
 
@@ -85,7 +95,7 @@ class HFImageText(AssetRetriever):
         for start in range(0, len(images), 8):
             batch = self._processor(images=images[start:start + 8], return_tensors="pt").to(model.device)
             with torch.no_grad():
-                vecs.append(model.get_image_features(**batch).cpu().numpy())
+                vecs.append(_embeddings(model.get_image_features(**batch)))
         self._image_vecs = _normalize(np.concatenate(vecs))
 
     def score(self, queries: list[str]) -> np.ndarray:
@@ -94,7 +104,7 @@ class HFImageText(AssetRetriever):
         batch = self._processor(text=queries, padding=self.text_padding, truncation=True,
                                 return_tensors="pt").to(model.device)
         with torch.no_grad():
-            text = model.get_text_features(**batch).cpu().numpy()
+            text = _embeddings(model.get_text_features(**batch))
         return _normalize(text) @ self._image_vecs.T
 
 
@@ -146,7 +156,8 @@ class CaptionThenText(AssetRetriever):
     def _caption(self, images: list, paths: list[Path]) -> list[str]:
         cache_path = paths[0].parent.parent / "captions_blip.json" if paths else None
         cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path and cache_path.exists() else {}
-        missing = [i for i, p in enumerate(paths) if p.name not in cache]
+        keys = [f"{p.parent.name}/{p.name}" for p in paths]   # assets/ and distractors/ may reuse names
+        missing = [i for i, k in enumerate(keys) if k not in cache]
         if missing:
             import torch
             from transformers import BlipForConditionalGeneration, BlipProcessor
@@ -157,10 +168,10 @@ class CaptionThenText(AssetRetriever):
                 inputs = processor(images=images[i], return_tensors="pt").to(model.device)
                 with torch.no_grad():
                     out = model.generate(**inputs, max_new_tokens=40, num_beams=3)
-                cache[paths[i].name] = processor.decode(out[0], skip_special_tokens=True).strip()
+                cache[keys[i]] = processor.decode(out[0], skip_special_tokens=True).strip()
             cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.captions = {p.name: cache[p.name] for p in paths}
-        return [cache[p.name] for p in paths]
+        self.captions = {k: cache[k] for k in keys}
+        return [cache[k] for k in keys]
 
     def _encoder(self):
         if self._text_model is None:
@@ -193,7 +204,7 @@ class Hybrid(AssetRetriever):
     def index(self, images: list, paths: list[Path]) -> None:
         for part in self.parts:
             part.index(images, paths)
-        self.params_m = sum(p.params_m or 0 for p in self.parts) or None
+        self.params_m = round(sum(p.params_m or 0 for p in self.parts), 1) or None
 
     def score(self, queries: list[str]) -> np.ndarray:
         return sum(1.0 / (RRF_K + tie_aware_ranks(part.score(queries))) for part in self.parts)

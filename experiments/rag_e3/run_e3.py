@@ -41,7 +41,7 @@ from visual_models import DEFAULT_METHODS, QUICK_METHODS, make_retriever
 HERE = Path(__file__).parent
 DATA_DIR = HERE / "data"
 RESULTS_DIR = HERE / "results"
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".jfif", ".png", ".webp", ".bmp"}   # .jfif = JPEG saved by browsers
 MAX_SIDE = 1024   # phone photos are huge; every model resizes to <= 384 px anyway
 METRIC_COLS = [f"R@{k}" for k in KS] + ["MRR"]
 
@@ -129,11 +129,21 @@ def library_stats(lib: dict) -> dict:
 
 # ─── Evaluation ────────────────────────────────────────────────────────────────
 
+def _display_name(lib: dict, index: int) -> str:
+    """Creator photos by file name; distractors prefixed, since both folders may reuse names like 1.jpg."""
+    name = lib["paths"][index].name
+    return f"distractors/{name}" if lib["is_distractor"][index] else name
+
+
 def evaluate_method(name: str, libraries: list[dict]) -> dict:
     retriever = make_retriever(name)
     per_library, all_ranks, queries_out = {}, [], []
     index_s = query_s = 0.0
     n_images = n_queries = 0
+
+    # Warm-up: load the model(s) outside the timed section, so speed excludes loading.
+    retriever.index(libraries[0]["images"][:1], libraries[0]["paths"][:1])
+    retriever.score([libraries[0]["queries"][0]["query"]])
 
     for lib in libraries:
         started = time.perf_counter()
@@ -159,8 +169,11 @@ def evaluate_method(name: str, libraries: list[dict]) -> dict:
             by_cat.setdefault(q["category"], []).append(int(r))
         result["category_R@3"] = {c: float(np.mean(np.array(r) <= 3)) for c, r in by_cat.items()}
 
-        # Fallback decision: best photo's score for scenes with vs without a fitting photo
-        best = scores.max(axis=1)
+        # Fallback decision: best CREATOR photo's score for scenes with vs without a fitting photo.
+        # Distractors are left out: in the product the library holds only the creator's photos,
+        # and a distractor that genuinely fits (e.g. another university's name sign for
+        # "university entrance with its name sign") must not count as "a photo fits".
+        best = scores[:, ~lib["is_distractor"]].max(axis=1)
         has_match = np.array([bool(r) for r in relevant])
         if retriever.thresholdable and has_match.any() and (~has_match).any():
             pos, neg = best[has_match], best[~has_match]
@@ -175,7 +188,7 @@ def evaluate_method(name: str, libraries: list[dict]) -> dict:
                 "library": lib["name"], "query": q["query"], "category": q["category"],
                 "relevant": q["relevant_files"],
                 "rank": next(rank_iter) if relevant[q_i] else None,
-                "top3": [{"file": lib["paths"][a].name, "distractor": bool(lib["is_distractor"][a]),
+                "top3": [{"file": _display_name(lib, a), "distractor": bool(lib["is_distractor"][a]),
                           "score": round(float(scores[q_i, a]), 4)} for a in top],
             })
 
@@ -225,8 +238,9 @@ def summary_markdown(results: list[dict], baseline: dict, stats: dict, config: d
         "## Overall (%)",
         "",
         "R@k / MRR over scenes that have a fitting photo. *Distractor top-1*: how often a non-creator "
-        "photo won (lower is better). *No-match AUC*: how well the best score separates "
-        "'a photo fits' from 'nothing fits' (100 = perfect, 50 = coin flip). Ranked by R@3.",
+        "photo won (lower is better). *No-match AUC*: how well the best creator-photo score separates "
+        "'a photo fits' from 'nothing fits' (100 = perfect, 50 = coin flip). ms/image and ms/query "
+        "exclude model loading. Ranked by R@3.",
         "",
         "| Method | Route | Params (M) | R@1 | R@3 | R@5 | MRR | R@3 95% CI | Distractor top-1 | No-match AUC | ms/image | ms/query |",
         "|---|---|---|---|---|---|---|---|---|---|---|---|",
