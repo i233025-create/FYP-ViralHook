@@ -7,14 +7,16 @@ Script (Scripting Agent output or frontend production plan) + creator profile
   1. style plan     profile + Module 2 CLIP vectors → StyleParams (cuts, pace, look)
   2. voiceover      Kokoro per scene, wpm-calibrated → real scene timing
   3. shot plan      scene ÷ shot_duration → sub-shots + search queries
-  4. assets         Pexels / SDXL candidates ranked by topic (+ creator look), per shot
+  4. assets         creator's own photos (SigLIP, E3) → Pexels / SDXL candidates
+                    ranked by topic (+ creator look), per shot
   5. timeline       timeline.json (single source of truth)
   6. render         FFmpeg + burned-in captions
   7. evaluate       Module 2 extractors on the MP4 vs the creator profile
 
 Modes:
   personalised — edit parameters measured from the creator's own videos, shots
-                 ranked toward the creator's visual look, look words in SDXL prompts
+                 ranked toward the creator's visual look, look words in SDXL prompts,
+                 creator-supplied photos used where they fit a scene
   generic      — fixed template defaults, topic-only ranking (the baseline)
 
 Output: pipeline/output/video/<job_id>/{final.mp4, timeline.json, evaluation.json}
@@ -23,6 +25,7 @@ CLI:
   python -m pipeline.agents.video_agent                       # personalised
   python -m pipeline.agents.video_agent --compare             # both modes + deltas
   python -m pipeline.agents.video_agent --script my.json --script-mode full_pipeline
+  python -m pipeline.agents.video_agent --assets path/to/creator/photos
 """
 
 from __future__ import annotations
@@ -46,6 +49,9 @@ if str(ROOT) not in sys.path:
 from pipeline.video import renderer                                   # noqa: E402
 from pipeline.local_llm import release_gpu                             # noqa: E402
 from pipeline.video.assets import AssetResolver                       # noqa: E402
+from pipeline.video.creator_assets import (                           # noqa: E402
+    CreatorAssetLibrary, load_creator_assets,
+)
 from pipeline.video.creator_visual import (                           # noqa: E402
     CreatorVisual, apply_measured_tone, describe_look, load_creator_visual,
 )
@@ -90,11 +96,19 @@ def generate_video(script, profile: dict, mode: str = "personalised",
                    on_step: StepCallback | None = None,
                    tts: TTSEngine | None = None, resolver: AssetResolver | None = None,
                    use_llm: bool = True, run_evaluation: bool = True, title: str = "ViralHook",
-                   creator: CreatorVisual | None | bool = True) -> dict:
+                   creator: CreatorVisual | None | bool = True,
+                   assets: CreatorAssetLibrary | str | Path | None = None,
+                   scene_assets: dict[int, str | None] | None = None) -> dict:
     """
     Run the full pipeline once. Returns
       {job_id, mode, video_path, timeline_path, timeline, evaluation, seconds}
     `creator`: True = load Module 2 vectors, None/False = run without them.
+    `assets`: creator's photo folder (or library); default CREATOR_ASSETS_DIR.
+              Personalised mode only — generic stays the stock/generated baseline.
+    `scene_assets`: the creator's reviewed choice per scene index (photo name,
+              or None = no photo). Given → used as-is: the photo opens its scene
+              (first shot), the rest of the scene uses stock / generated visuals.
+              Not given → automatic SigLIP matching with the threshold.
     """
     started = time.time()
     job_id = job_id or uuid.uuid4().hex[:12]
@@ -112,6 +126,9 @@ def generate_video(script, profile: dict, mode: str = "personalised",
         creator = load_creator_visual()
     creator = creator or None
     resolver = resolver or AssetResolver(CACHE_DIR)
+    library = None
+    if mode == "personalised":
+        library = assets if isinstance(assets, CreatorAssetLibrary) else load_creator_assets(assets, CACHE_DIR)
 
     # 1. Style
     step(1, mode)
@@ -162,12 +179,19 @@ def generate_video(script, profile: dict, mode: str = "personalised",
     used_ids: set = set()
     total = sum(len(t.shots) for t in tracks)
     done = 0
-    for track in tracks:
-        for shot in track.shots:
+    reviewed = library is not None and scene_assets is not None
+    for i, track in enumerate(tracks):
+        chosen = scene_assets.get(i) if reviewed else None
+        for k, shot in enumerate(track.shots):
             done += 1
             step(4, f"shot {done}/{total}: {shot.query}")
+            if chosen and k == 0:
+                shot.asset = resolver.creator_photo(library, chosen, track.clip_idea, shot.query)
+                continue
             shot.asset = resolver.resolve(shot.query, shot.image_prompt, used_ids,
-                                          creator=creator, creator_weight=style.creator_weight)
+                                          creator=creator, creator_weight=style.creator_weight,
+                                          creator_assets=None if reviewed else library,
+                                          scene=track.clip_idea)
     resolver.release()
 
     # 5. Timeline
@@ -241,15 +265,19 @@ def main():
     parser.add_argument("--mode", choices=["personalised", "generic"], default="personalised")
     parser.add_argument("--compare", action="store_true", help="Render both modes and compare")
     parser.add_argument("--no-llm", action="store_true", help="Keyword shot queries, no Ollama")
+    parser.add_argument("--assets", type=Path, default=None,
+                        help="Folder of creator photos (default: CREATOR_ASSETS_DIR)")
     args = parser.parse_args()
 
     script, title = _load_script(args.script, args.script_mode)
     profile = load_profile()
     if args.compare:
-        report = compare_modes(script, profile, use_llm=not args.no_llm, title=title)
+        report = compare_modes(script, profile, use_llm=not args.no_llm, title=title,
+                               assets=args.assets)
         print(json.dumps(report.get("comparison", report), indent=2))
     else:
-        result = generate_video(script, profile, mode=args.mode, use_llm=not args.no_llm, title=title)
+        result = generate_video(script, profile, mode=args.mode, use_llm=not args.no_llm, title=title,
+                                assets=args.assets)
         print(f"\nVideo     : {result['video_path']}\nTimeline  : {result['timeline_path']}"
               f"\nTook      : {result['seconds']}s")
         print(json.dumps(result["evaluation"], indent=2))

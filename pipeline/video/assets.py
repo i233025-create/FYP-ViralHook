@@ -3,6 +3,8 @@ assets.py — Asset Agent: one visual per shot
 =============================================
 Fallback chain for every shot query:
 
+  0. Creator's own photo (personalised mode, if the creator supplied photos)
+       SigLIP(photo, scene) >= threshold, best unused — creator_assets.py (E3)
   1. Pexels stock video (only if PEXELS_API_KEY is set)
        top-k portrait results → CLIP-score each thumbnail against the query
        → best unused clip with score ≥ CLIP_THRESHOLD is downloaded
@@ -41,6 +43,7 @@ from pathlib import Path
 import numpy as np
 import requests
 
+from .creator_assets import CreatorAssetLibrary, asset_id
 from .creator_visual import CreatorVisual
 from .image_gen import ImageGenError, SDXLLightning, image_gen_enabled, make_placeholder
 from .timeline import Asset
@@ -257,9 +260,39 @@ class AssetResolver:
                      clip_score=text_score, creator_score=creator_score,
                      note=f"{prompt} (best of {len(paths)})")
 
+    def _from_creator_assets(self, query: str, scene: str, library: CreatorAssetLibrary,
+                             used_ids: set) -> Asset | None:
+        try:
+            found = library.match(scene or query, used_ids)
+        except Exception as e:   # model download / unreadable photo → normal chain
+            print(f"[Assets] Creator photo matching unavailable ({e})")
+            return None
+        if found is None:
+            return None
+        path, score = found
+        used_ids.add(asset_id(path))
+        return Asset(path=str(path), kind="image", source="creator", query=query,
+                     asset_score=score, source_id=path.name,
+                     note=f"creator photo, SigLIP {score:.3f} >= {library.threshold}")
+
+    @staticmethod
+    def creator_photo(library: CreatorAssetLibrary, name: str, scene: str, query: str) -> Asset:
+        """The photo the creator confirmed for this scene in the review step (any score)."""
+        path = library.path_of(name)
+        if path is None:
+            raise ValueError(f"No creator photo named {name!r}")
+        score = library.score_of(scene, name)
+        return Asset(path=str(path), kind="image", source="creator", query=query,
+                     asset_score=score, source_id=name, note="creator photo, confirmed by creator")
+
     def resolve(self, query: str, prompt: str = "", used_ids: set | None = None,
-                creator: CreatorVisual | None = None, creator_weight: float = 0.0) -> Asset:
+                creator: CreatorVisual | None = None, creator_weight: float = 0.0,
+                creator_assets: CreatorAssetLibrary | None = None, scene: str = "") -> Asset:
         used_ids = used_ids if used_ids is not None else set()
+        if creator_assets is not None:
+            asset = self._from_creator_assets(query, scene, creator_assets, used_ids)
+            if asset:
+                return asset
         if self.pexels:
             asset = self._from_pexels(query, used_ids, creator, creator_weight)
             if asset:

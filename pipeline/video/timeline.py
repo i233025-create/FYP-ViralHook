@@ -70,10 +70,11 @@ class VoiceClip(BaseModel):
 class Asset(BaseModel):
     path: str
     kind: Literal["video", "image"]
-    source: Literal["pexels", "sdxl", "placeholder"]
+    source: Literal["creator", "pexels", "sdxl", "placeholder"]
     query: str
     clip_score: Optional[float] = None            # CLIP(asset, shot query)
     creator_score: Optional[float] = None         # CLIP(asset) · creator centroid
+    asset_score: Optional[float] = None           # SigLIP(creator photo, scene) — E3
     source_id: Optional[str] = None
     note: str = ""
 
@@ -226,7 +227,9 @@ def to_frontend(timeline: Timeline) -> list[dict]:
                 {"start": sh.start, "end": sh.end, "query": sh.query,
                  "source": sh.asset.source if sh.asset else None,
                  "clipScore": sh.asset.clip_score if sh.asset else None,
-                 "creatorScore": sh.asset.creator_score if sh.asset else None}
+                 "creatorScore": sh.asset.creator_score if sh.asset else None,
+                 "assetScore": sh.asset.asset_score if sh.asset else None,
+                 "assetName": sh.asset.source_id if sh.asset and sh.asset.source == "creator" else None}
                 for sh in sc.shots
             ],
         }

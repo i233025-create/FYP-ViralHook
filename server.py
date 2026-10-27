@@ -10,6 +10,9 @@ Endpoints:
   POST /research/trends           → Research Agent: trending topics from real YouTube Shorts
   POST /script/generate           → Scripting Agent: 3 hook variants, measured evaluator
   POST /export/xml                → Premiere Pro XML from production plan
+  POST /assets/upload             → save the creator's photos for a video (returns library_id)
+  GET  /assets/{lib}/file/{name}  → one uploaded photo
+  POST /assets/match              → SigLIP suggestion per scene, for the creator to review (E3)
   POST /video/generate            → Video Agent: start a render job (returns job_id)
   GET  /video/status/{job_id}     → job progress, timeline + evaluation when done
   GET  /video/file/{job_id}       → the rendered MP4
@@ -188,11 +191,24 @@ class ExportXMLRequest(BaseModel):
 class VideoRequest(BaseModel):
     plan: dict                       # production plan { title, scenes[] } or a ScriptOutput
     mode: str = "personalised"       # "personalised" | "generic" (baseline)
+    assetLibraryId: Optional[str] = None            # from /assets/upload
+    sceneAssets: Optional[dict[str, Optional[str]]] = None   # reviewed: scene index → photo name | null
+
+
+class AssetMatchRequest(BaseModel):
+    libraryId: str
+    plan: dict
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/")
+def root():
+    """This is the API only; the UI is the Vite app (npm run dev → localhost:5173)."""
+    return {"service": "ViralHook API", "ui": "http://localhost:5173", "docs": "/docs", "health": "/health"}
+
 
 @app.get("/health")
 def health():
@@ -571,7 +587,103 @@ def _update_job(job_id: str, **fields):
         _video_jobs[job_id].update(fields)
 
 
-def _run_video_job(job_id: str, plan: dict, mode: str):
+# ── Creator photos (E3): upload → SigLIP suggestions → creator review ─────────
+
+ASSET_UPLOAD_DIR = ROOT / "pipeline" / "cache" / "creator_uploads"
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".jfif", ".bmp"}
+MAX_UPLOAD_PHOTOS = 40
+_asset_libraries: dict = {}            # library_id → CreatorAssetLibrary (embeddings stay in memory)
+_asset_lock = threading.Lock()
+_siglip = None                         # one SigLIP encoder shared by all libraries
+
+
+def _library_dir(library_id: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{12}", library_id or ""):
+        raise HTTPException(status_code=400, detail="Bad asset library id.")
+    folder = ASSET_UPLOAD_DIR / library_id
+    if not folder.is_dir():
+        raise HTTPException(status_code=404, detail="Unknown asset library.")
+    return folder
+
+
+def _get_library(library_id: str):
+    """CreatorAssetLibrary for an uploaded set (cached, so photos are embedded once)."""
+    global _siglip
+    from pipeline.agents.video_agent import CACHE_DIR
+    from pipeline.video.creator_assets import CreatorAssetLibrary, SiglipEncoder
+
+    folder = _library_dir(library_id)
+    with _asset_lock:
+        if library_id not in _asset_libraries:
+            _siglip = _siglip or SiglipEncoder()
+            _asset_libraries[library_id] = CreatorAssetLibrary(folder, CACHE_DIR, encoder=_siglip)
+        return _asset_libraries[library_id]
+
+
+def _photo_list(library_id: str, folder: Path) -> list[dict]:
+    return [{"name": p.name, "url": f"/assets/{library_id}/file/{p.name}"}
+            for p in sorted(folder.iterdir()) if p.suffix.lower() in IMAGE_EXTENSIONS]
+
+
+@app.post("/assets/upload")
+def assets_upload(files: List[UploadFile] = File(...)):
+    """
+    POST /assets/upload  multipart: files[]  (the creator's photos for this video)
+    → { libraryId, photos: [{name, url}] }
+    """
+    photos = [f for f in files if Path(f.filename or "").suffix.lower() in IMAGE_EXTENSIONS]
+    if not photos:
+        raise HTTPException(status_code=400, detail="Upload at least one photo "
+                            f"({', '.join(sorted(IMAGE_EXTENSIONS))}).")
+    if len(photos) > MAX_UPLOAD_PHOTOS:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_PHOTOS} photos.")
+    library_id = uuid.uuid4().hex[:12]
+    folder = ASSET_UPLOAD_DIR / library_id
+    folder.mkdir(parents=True)
+    for i, up in enumerate(photos, start=1):
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(up.filename).name)
+        with open(folder / f"{i:02d}_{safe}", "wb") as out:
+            shutil.copyfileobj(up.file, out)
+    return {"libraryId": library_id, "photos": _photo_list(library_id, folder)}
+
+
+@app.get("/assets/{library_id}/file/{name}")
+def assets_file(library_id: str, name: str):
+    folder = _library_dir(library_id)
+    path = folder / Path(name).name
+    if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return FileResponse(path)
+
+
+@app.post("/assets/match")
+def assets_match(body: AssetMatchRequest):
+    """
+    POST /assets/match { libraryId, plan }
+    → { threshold, photos, scenes: [{index, segment, clipIdea, ranked[{name, score}], suggested}] }
+    Scene indices match the Video Agent's (scenes without voiceover are skipped).
+    """
+    from pipeline.video.timeline import normalize_scenes
+
+    library = _get_library(body.libraryId)
+    try:
+        scenes = normalize_scenes(body.plan)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        suggestions = library.suggest([sc["clip_idea"] or sc["voiceover"] for sc in scenes])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Photo matching failed: {e}")
+    return {
+        "threshold": library.threshold,
+        "photos": _photo_list(body.libraryId, library.folder),
+        "scenes": [{"index": i, "segment": sc["segment"], "clipIdea": sc["clip_idea"], **sug}
+                   for i, (sc, sug) in enumerate(zip(scenes, suggestions))],
+    }
+
+
+def _run_video_job(job_id: str, plan: dict, mode: str, library_id: str | None = None,
+                   scene_assets: dict | None = None):
     from pipeline.agents.video_agent import generate_video, load_profile
     from pipeline.video.timeline import to_frontend
 
@@ -581,6 +693,8 @@ def _run_video_job(job_id: str, plan: dict, mode: str):
             plan, load_profile(), mode=mode, job_id=job_id,
             title=plan.get("title", "ViralHook"),
             on_step=lambda n, label, detail: _update_job(job_id, step=n, stepLabel=label, detail=detail),
+            assets=_get_library(library_id) if library_id else None,
+            scene_assets={int(k): v for k, v in scene_assets.items()} if scene_assets is not None else None,
         )
         _update_job(job_id, status="done", videoPath=result["video_path"],
                     timeline=to_frontend(result["timeline"]), evaluation=result["evaluation"],
@@ -608,7 +722,10 @@ def video_generate(body: VideoRequest):
     with _video_lock:
         _video_jobs[job_id] = {"jobId": job_id, "status": "queued", "mode": body.mode,
                                "step": 0, "stepLabel": "", "detail": "", "steps": STEPS}
-    _video_executor.submit(_run_video_job, job_id, body.plan, body.mode)
+    if body.assetLibraryId:
+        _library_dir(body.assetLibraryId)   # 400/404 now rather than inside the job
+    _video_executor.submit(_run_video_job, job_id, body.plan, body.mode,
+                           body.assetLibraryId, body.sceneAssets)
     return {"jobId": job_id, "steps": STEPS}
 
 
