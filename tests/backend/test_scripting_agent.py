@@ -82,7 +82,8 @@ def baseline():
 def context(sample_creator_profile, baseline):
     examples = [{"topic": "Discipline", "hook_type": "Contrarian", "hook_text": "",
                  "key_phrases": [], "transcript": TRANSCRIPT}]
-    return {"profile": sample_creator_profile, "examples": examples, "baseline": baseline}
+    return {"profile": sample_creator_profile, "examples": examples, "retrieval_pool": examples,
+            "baseline": baseline}
 
 
 # ── [1] Context ────────────────────────────────────────────────────────────────
@@ -132,12 +133,28 @@ def test_retrieve_examples_picks_most_similar(monkeypatch):
     vectors = {"phones": [0, 1, 0], "discipline": [1, 0, 0], "cooking": [0, 0, 1],
                "habits": [0.8, 0.2, 0], "morning discipline": [1, 0, 0]}
 
-    def fake_embed(texts):
+    calls = []
+
+    def fake_embed(texts, is_query):
+        calls.append(is_query)
         return np.array([vectors[t.split(". ")[0]] for t in texts], dtype=float)
 
-    monkeypatch.setattr(sa, "embed_texts", fake_embed)
+    monkeypatch.setattr(sa, "embed_for_retrieval", fake_embed)
     picked = sa.retrieve_examples(examples, "morning discipline", k=2)
     assert [e["topic"] for e in picked] == ["discipline", "habits"]
+    assert sorted(calls) == [False, True]   # e5 needs passage/query prefixes
+
+
+def test_prepare_context_searches_translated_transcripts(monkeypatch):
+    words = " ".join(["word"] * 30)
+    rows = [{"topic": "a", "transcript": words, "language": "en"},
+            {"topic": "b", "transcript": words, "language": "hi"},
+            {"topic": "c", "transcript": "too short", "language": "en"}]
+    monkeypatch.setattr(sa, "load_creator_examples", lambda: rows)
+    monkeypatch.setattr(sa, "load_multimodal_stats", lambda: {})
+    context = sa.prepare_context({"creator_niche": "x"})
+    assert [e["topic"] for e in context["examples"]] == ["a"]              # style: spoken English
+    assert [e["topic"] for e in context["retrieval_pool"]] == ["a", "b"]   # retrieval: any language
 
 
 # ── [3] Prompting + generation ─────────────────────────────────────────────────

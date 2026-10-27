@@ -112,8 +112,8 @@ def process_video(
             video_index=video_index,
             total=total_videos,
             model_size=whisper_model_size,
-            language=None,
-            task="translate",
+            language="en",        # E1: forced English beats auto-detect for Urdu–English speech
+            task="transcribe",
         )
         result["transcript"] = transcript
 

@@ -9,7 +9,8 @@ Flow:
                   (ChromaDB metadata) + speech rate / visual style (Module 2
                   Qdrant snapshot) → style baseline + word budget
                   (30 s × creator's words-per-minute).
-  [2] Retrieve    MiniLM: topic → 2-3 most similar past transcripts, shown to
+  [2] Retrieve    multilingual-e5-small (chosen by E1): topic → 3 most similar
+                  past transcripts (any spoken language, English text), shown to
                   the LLM as "this is how this creator talks".
   [3] Generate    LLM (local Ollama by default) in JSON mode → 5 scenes.
                   Pydantic-validated; one repair retry if unusable.
@@ -62,7 +63,7 @@ load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 from pipeline.state import PipelineState, ScriptingOutput, ScriptOutput, SceneOutput  # noqa: E402
 from pipeline.local_llm import LocalLLMError, chat_json  # noqa: E402
-from pipeline.embeddings import embed_texts  # noqa: E402
+from pipeline.embeddings import embed_for_retrieval  # noqa: E402
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 CHROMA_PERSIST_DIR = ROOT / "module1_style_extraction" / "chroma_db"
@@ -245,23 +246,33 @@ def prepare_context(profile: dict | None = None) -> dict:
     profile = profile or _load_creator_profile()
     all_examples = load_creator_examples()
     examples = [e for e in all_examples if usable_for_style(e)]
+    # Retrieval searches every transcript long enough to carry a topic, whatever
+    # language was spoken: Module 1 stores English text for all of them (Whisper
+    # language="en"), and E1 showed retrieval works on these (R@3 94% for the
+    # Urdu–English creators). The style baseline above stays spoken-English only.
+    retrieval_pool = [e for e in all_examples if len(_words(e["transcript"])) >= MIN_TRANSCRIPT_WORDS]
     baseline = build_style_baseline(examples, load_multimodal_stats())
     baseline["transcripts_excluded"] = len(all_examples) - len(examples)
     print(f"[ScriptingAgent] Context: {len(examples)} usable transcripts "
           f"({baseline['transcripts_excluded']} excluded: non-English or too short), "
+          f"{len(retrieval_pool)} searchable for examples, "
           f"{baseline['baseline_words']} words{' — LOW CONFIDENCE' if baseline['low_confidence'] else ''}, "
           f"{baseline['wpm']} wpm ({baseline['wpm_source']}), budget {baseline['word_budget']} words")
-    return {"profile": profile, "examples": examples, "baseline": baseline}
+    return {"profile": profile, "examples": examples, "retrieval_pool": retrieval_pool,
+            "baseline": baseline}
 
 
 # ─── [2] Retrieval ─────────────────────────────────────────────────────────────
 
 def retrieve_examples(examples: list[dict], topic: str, k: int = RAG_TOP_K) -> list[dict]:
-    """Top-k past transcripts most similar to the topic (MiniLM cosine)."""
+    """Top-k past transcripts most similar to the topic (multilingual-e5-small cosine, E1)."""
     if len(examples) <= k:
         return examples
-    vectors = embed_texts([f"{e['topic']}. {e['transcript'][:500]}" for e in examples])
-    query = embed_texts([topic])[0]
+    # Whole transcript (e5 reads up to 512 tokens): E1 measured R@3 94.1% on the
+    # Urdu–English food creator with full transcripts but 70.6% with the first 500 chars
+    vectors = embed_for_retrieval([f"{e['topic']}. {e['transcript']}" for e in examples],
+                                  is_query=False)
+    query = embed_for_retrieval([topic], is_query=True)[0]
     order = np.argsort(-(vectors @ query))[:k]
     return [examples[i] for i in order]
 
@@ -720,7 +731,7 @@ def run_mode(mode: str, topic: str, context: dict, examples: list[dict], hook_ty
     profile, baseline = context["profile"], context["baseline"]
     structure = _extract_style_params(profile)["structure"]
     shots = examples if mode != "no_history" else []
-    transcripts = [e["transcript"] for e in context["examples"]]
+    transcripts = [e["transcript"] for e in context.get("retrieval_pool", context["examples"])]
 
     def attempt(feedback=None, previous=None) -> tuple[ScriptOutput, dict]:
         prompt = build_prompt(mode, topic, hook_type, structure, profile, baseline, shots,
@@ -792,7 +803,7 @@ def generate_variants(topic: str, trend: dict | None = None, profile: dict | Non
         LocalLLMError: if every variant failed.
     """
     context = prepare_context(profile)
-    examples = retrieve_examples(context["examples"], topic)
+    examples = retrieve_examples(context["retrieval_pool"], topic)
     results, errors = [], []
     for i, hook in enumerate(variant_hooks(context["profile"], n), 1):
         try:
@@ -809,7 +820,7 @@ def run_ablation(topic: str, trend: dict | None = None, profile: dict | None = N
                  hook_type: str | None = None) -> dict[str, tuple[ScriptOutput, dict]]:
     """Research path: the same topic/hook through all three modes, same evaluator."""
     context = prepare_context(profile)
-    examples = retrieve_examples(context["examples"], topic)
+    examples = retrieve_examples(context["retrieval_pool"], topic)
     hook = hook_type or _extract_style_params(context["profile"])["hook_type"]
     return {mode: run_mode(mode, topic, context, examples, hook, trend) for mode in MODES}
 
@@ -839,7 +850,7 @@ def scripting_agent(state: PipelineState) -> dict[str, Any]:
         profile = state.get("creator_profile") or None
         if mode in MODES:
             context = prepare_context(profile)
-            examples = retrieve_examples(context["examples"], topic)
+            examples = retrieve_examples(context["retrieval_pool"], topic)
             hook = _extract_style_params(context["profile"])["hook_type"]
             results = [run_mode(mode, topic, context, examples, hook, research_output)]
         else:

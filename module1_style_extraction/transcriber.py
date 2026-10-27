@@ -30,8 +30,8 @@ from rich.console import Console
 _whisper_model = None
 
 # Spoken language Whisper detected in the most recent transcribe_audio() call
-# (ISO code, e.g. "en", "hi"). With task="translate" the transcript is always
-# English, so this is the only record of what the creator actually spoke —
+# (ISO code, e.g. "en", "hi"). With language="en" (or task="translate") the
+# transcript is always English, so this is the only record of what the creator actually spoke —
 # the Scripting Agent uses it to keep translated videos out of its style baseline.
 last_language: str = ""
 
@@ -117,6 +117,17 @@ def download_audio(url: str, output_dir: str) -> str:
         raise RuntimeError(f"Unexpected error during audio download: {e}") from e
 
 
+def detect_spoken_language(audio_path: str) -> str:
+    """Whisper language ID on the first 30 s ("" if it fails). Needs the model loaded."""
+    try:
+        audio = whisper.pad_or_trim(whisper.load_audio(audio_path))
+        mel = whisper.log_mel_spectrogram(audio, n_mels=_whisper_model.dims.n_mels).to(_whisper_model.device)
+        _, probs = _whisper_model.detect_language(mel)
+        return max(probs, key=probs.get)
+    except Exception:
+        return ""
+
+
 def transcribe_audio(audio_path: str, model_size: str = "tiny", language: str = None, task: str = "translate") -> str:
     """
     Transcribe (or translate) an audio file using OpenAI Whisper.
@@ -170,7 +181,10 @@ def transcribe_audio(audio_path: str, model_size: str = "tiny", language: str = 
             audio_path, fp16=False, language=language, task=task
         )
         transcript: str = result.get("text", "").strip()
-        last_language = result.get("language") or language or ""
+        # With a forced language, result["language"] is just that language, so
+        # detect what was actually spoken (first 30 s) for the style baseline.
+        last_language = (detect_spoken_language(audio_path) if language else None) \
+            or result.get("language") or language or ""
 
         # ── Clean up hallucinated garbage characters ──────────────────────
         # Whisper tiny sometimes hallucinates non-Latin/non-Urdu characters
