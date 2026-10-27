@@ -285,9 +285,9 @@ const VIDEO_POLL_MS = 1500
  * onStep({ id, label, detail }) fires on every progress change.
  * Returns: { timeline, videoUrl, evaluation, mode }   (videoUrl null when mocked)
  */
-export async function generateAIVideo({ plan, mode = 'personalised', onStep }) {
+export async function generateAIVideo({ plan, mode = 'personalised', assetLibraryId = null, sceneAssets = null, onStep }) {
   if (USE_REAL_BACKEND) {
-    const { jobId } = await apiFetch('/video/generate', { plan, mode })
+    const { jobId } = await apiFetch('/video/generate', { plan, mode, assetLibraryId, sceneAssets })
     for (;;) {
       await delay(VIDEO_POLL_MS)
       const res = await fetch(`${API_BASE}/video/status/${jobId}`)
@@ -311,6 +311,53 @@ export async function generateAIVideo({ plan, mode = 'personalised', onStep }) {
     if (onStep) onStep(step)
   }
   return { timeline: MOCK_VIDEO_TIMELINE(plan?.scenes), videoUrl: null, evaluation: null, mode }
+}
+
+// ── Creator photos (experiment E3: SigLIP match → creator review) ─────────────
+
+/** Backend photo URLs are relative; blob: URLs (mock mode) are used as-is. */
+export const photoUrl = (url) => (!url || url.startsWith('blob:') ? url : `${API_BASE}${url}`)
+
+/**
+ * POST /assets/upload (multipart files[]) → { libraryId, photos: [{ name, url }] }
+ */
+export async function uploadCreatorPhotos(files) {
+  if (USE_REAL_BACKEND) {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f, f.name))
+    let res
+    try {
+      res = await fetch(`${API_BASE}/assets/upload`, { method: 'POST', body: form })
+    } catch (_) {
+      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Upload failed (${res.status})`)
+    }
+    return res.json()
+  }
+  await delay(500)
+  return { libraryId: 'mock', photos: files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })) }
+}
+
+/**
+ * POST /assets/match { libraryId, plan }
+ * → { threshold, photos, scenes: [{ index, segment, clipIdea, ranked: [{ name, score }], suggested }] }
+ * `suggested` is the best photo above the threshold (null → stock / generated);
+ * the creator confirms or swaps it before rendering.
+ */
+export async function matchCreatorPhotos({ libraryId, plan, photos = [] }) {
+  if (USE_REAL_BACKEND) return apiFetch('/assets/match', { libraryId, plan })
+  await delay(600)
+  return {
+    threshold: 0.064,
+    photos,
+    scenes: (plan?.scenes || []).map((sc, index) => ({
+      index, segment: sc.segment, clipIdea: sc.visual || sc.clip_idea || '',
+      ranked: photos.map((p) => ({ name: p.name, score: null })), suggested: null,
+    })),
+  }
 }
 
 /**

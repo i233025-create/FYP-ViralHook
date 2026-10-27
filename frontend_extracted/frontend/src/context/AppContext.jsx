@@ -2,6 +2,26 @@ import { createContext, useContext, useState, useCallback } from 'react'
 
 const AppContext = createContext(null)
 
+// Demo shortcut: http://localhost:5173/?demo=photos opens the creator-photo
+// review step (experiment E3) directly, with a FAST admissions script, so it
+// can be shown without running login → research → scripting (needs Ollama).
+const DEMO = new URLSearchParams(window.location.search).get('demo')
+const DEMO_PHOTOS_PLAN = {
+  title: 'FAST Admissions Open',
+  scenes: [
+    { segment: 'HOOK', visual: 'An aerial view of the whole university campus',
+      voiceover: 'Admissions are now open at FAST Islamabad.', caption: 'ADMISSIONS OPEN' },
+    { segment: 'SETUP', visual: 'A modern computer lab with rows of computers',
+      voiceover: 'Learn to build real software in modern labs.', caption: 'MODERN LABS' },
+    { segment: 'MAIN POINT', visual: 'A busy cafeteria where students eat and chat',
+      voiceover: 'Make friends for life between classes.', caption: 'CAMPUS LIFE' },
+    { segment: 'EVIDENCE', visual: 'A convocation ceremony with students in gowns',
+      voiceover: 'Graduate ready for the industry.', caption: 'GRADUATE READY' },
+    { segment: 'CONCLUSION', visual: 'Students walking through the university main gate',
+      voiceover: 'Apply today, your future starts here.', caption: 'APPLY TODAY' },
+  ],
+}
+
 export function AppProvider({ children }) {
   // Auth
   const [user, setUser] = useState(null)
@@ -13,14 +33,14 @@ export function AppProvider({ children }) {
   const [selectedTopic, setSelectedTopic]     = useState(null)
   const [trendingTopics, setTrendingTopics]   = useState([])    // real topics from research agent
   const [selectedVariant, setSelectedVariant] = useState(null)
-  const [productionPlan, setProductionPlan]   = useState(null)
+  const [productionPlan, setProductionPlan]   = useState(DEMO === 'photos' ? DEMO_PHOTOS_PLAN : null)
   const [exportXML, setExportXML]             = useState(null)
   const [videoTimeline, setVideoTimeline]     = useState(null)
   const [videoResult, setVideoResult]         = useState(null)    // { videoUrl, evaluation, mode }
   const [publishStatus, setPublishStatus]     = useState(null)
 
   // Navigation
-  const [screen, setScreen] = useState('auth')
+  const [screen, setScreen] = useState(DEMO === 'photos' ? 'video-gen' : 'auth')
   const navigate = useCallback((s) => setScreen(s), [])
 
   const logout = useCallback(() => {
