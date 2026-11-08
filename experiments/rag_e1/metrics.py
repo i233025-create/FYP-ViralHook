@@ -1,9 +1,10 @@
 """
 metrics.py — Known-item retrieval metrics for E1
 =================================================
-Query i (reel i's caption) has exactly one correct document: reel i's own
-transcript, which sits at index i. So the correct answers are the diagonal
-of the score matrix.
+Each query (a reel's caption or hand-written topic) has exactly one correct
+document: that reel's own transcript. The library may contain more
+transcripts than there are queries (reels without a usable query stay in as
+distractors), so each query carries the index of its target document.
 
   Recall@k   share of queries whose correct transcript is in the top k
   MRR        mean of 1/rank of the correct transcript (1.0 = always first)
@@ -20,10 +21,18 @@ from retrievers import tie_aware_ranks
 KS = (1, 3, 5)
 
 
-def correct_ranks(scores: np.ndarray) -> np.ndarray:
-    """Rank of the correct (diagonal) document for each query."""
-    idx = np.arange(scores.shape[0])
-    return tie_aware_ranks(scores)[idx, idx]
+def correct_ranks(scores: np.ndarray, targets=None) -> np.ndarray:
+    """
+    Rank of the correct document for each query.
+
+    scores is (n_queries, n_docs). targets[q] is the index of query q's correct
+    doc; by default the diagonal (one query per doc, same order). The library
+    can hold more docs than there are queries: reels whose caption is unusable
+    still compete as distractors.
+    """
+    rows = np.arange(scores.shape[0])
+    cols = rows if targets is None else np.asarray(targets)
+    return tie_aware_ranks(scores)[rows, cols]
 
 
 def summarize(ranks: np.ndarray, ks=KS) -> dict[str, float]:

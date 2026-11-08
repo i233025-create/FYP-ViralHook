@@ -4,11 +4,14 @@ run_e1.py — E1: which search method best finds a creator's own past reels? (st
 For each creator separately (the system only ever searches one creator's
 own library):
 
-  query    = reel i's cleaned caption
-  docs     = transcripts of all of that creator's reels (no captions inside)
+  query    = reel i's cleaned caption (--queries caption)
+             or a hand-written topic for reel i (--queries topic, topics.csv)
+  docs     = transcripts of that creator's reels (no captions inside);
+             by default ALL transcribed reels, so reels without a usable
+             query still compete as distractors (--library queryable = v1)
   correct  = reel i's own transcript
 
-Every method ranks the transcripts for every caption, and we record where
+Every method ranks the transcripts for every query, and we record where
 the correct one lands. Run prepare_data.py first.
 
 Outputs:
@@ -19,11 +22,13 @@ Usage:
   python run_e1.py                       # all methods
   python run_e1.py --quick               # 6 representative methods (faster)
   python run_e1.py --methods bm25 minilm bm25+minilm
+  python run_e1.py --creators "Rabika Tahir v2" --queries topic --tag v2_topic
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import platform
 import time
@@ -39,6 +44,7 @@ from text_clean import MIN_QUERY_WORDS, clean_caption, dominant_script, word_cou
 
 HERE = Path(__file__).parent
 RESULTS_DIR = HERE / "results"
+TOPICS_FILE = "topics.csv"  # hand-written topic queries, see make_topic_sheet.py
 MIN_TRANSCRIPT_WORDS = 10   # below this the reel is mostly music / no speech
 MIN_REELS = 5               # a creator with fewer usable reels is skipped
 RECOMMENDED_REELS = 15
@@ -47,43 +53,84 @@ METRIC_COLS = [f"R@{k}" for k in KS] + ["MRR"]
 
 # ─── Dataset ───────────────────────────────────────────────────────────────────
 
-def load_creator(creator_dir: Path, transcripts_name: str = TRANSCRIPTS_FILE) -> tuple[list[dict], dict]:
-    """Usable (query, doc) pairs for one creator, plus why the rest were excluded."""
+def read_topics(creator_dir: Path) -> dict[str, str]:
+    """topics.csv (file,topic,...) → {file: topic}; extra columns are ignored."""
+    path = creator_dir / TOPICS_FILE
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        return {r["file"].strip(): (r.get("topic") or "").strip() for r in csv.DictReader(f) if r.get("file")}
+
+
+def load_creator(creator_dir: Path, transcripts_name: str = TRANSCRIPTS_FILE,
+                 query_source: str = "caption", library_mode: str = "all") -> tuple[dict, dict]:
+    """
+    One creator's search library and queries.
+
+      library  every reel with a usable transcript (the docs searched)
+      queries  the library reels that also have a usable query; each points at
+               its own transcript via `target` (index into library)
+
+    library_mode="queryable" keeps only reels that have a query (the E1 v1
+    setup); "all" keeps the rest as distractors, which is closer to a real
+    creator's library and makes the task harder.
+    """
     transcripts_path = creator_dir / transcripts_name
     transcripts = json.loads(transcripts_path.read_text(encoding="utf-8")) if transcripts_path.exists() else {}
+    topics = read_topics(creator_dir) if query_source == "topic" else {}
 
-    items, excluded, seen_queries = [], {}, set()
+    library, candidates = [], []
+    not_in_library, not_query, seen_queries = {}, {}, set()
 
-    def exclude(reason: str):
-        excluded[reason] = excluded.get(reason, 0) + 1
+    def count(bucket: dict, reason: str):
+        bucket[reason] = bucket.get(reason, 0) + 1
 
-    for row in read_captions(creator_dir):
+    rows = read_captions(creator_dir)
+    for row in rows:
         transcript = (transcripts.get(row["file"]) or {}).get("text", "")
-        query = clean_caption(row["caption"])
         if row["file"] not in transcripts:
-            exclude("not transcribed")
-        elif not transcript:
-            exclude("no speech")
-        elif word_count(transcript) < MIN_TRANSCRIPT_WORDS:
-            exclude(f"transcript < {MIN_TRANSCRIPT_WORDS} words")
-        elif word_count(query) < MIN_QUERY_WORDS:
-            exclude(f"caption < {MIN_QUERY_WORDS} words after cleaning")
+            count(not_in_library, "not transcribed")
+            continue
+        if not transcript:
+            count(not_in_library, "no speech")
+            continue
+        if word_count(transcript) < MIN_TRANSCRIPT_WORDS:
+            count(not_in_library, f"transcript < {MIN_TRANSCRIPT_WORDS} words")
+            continue
+        library.append({"file": row["file"], "doc": transcript})
+
+        if query_source == "topic":
+            query = topics.get(row["file"], "")
+            short_reason = "no topic written" if not query else f"topic < {MIN_QUERY_WORDS} words"
+        else:
+            query = clean_caption(row["caption"])
+            short_reason = f"caption < {MIN_QUERY_WORDS} words after cleaning"
+        if word_count(query) < MIN_QUERY_WORDS:
+            count(not_query, short_reason)
         elif query.lower() in seen_queries:
-            exclude("duplicate caption")
+            count(not_query, f"duplicate {query_source}")
         else:
             seen_queries.add(query.lower())
-            items.append({"file": row["file"], "raw_caption": row["caption"], "query": query, "doc": transcript})
+            candidates.append({"file": row["file"], "raw_caption": row["caption"], "query": query})
+
+    if library_mode == "queryable":
+        keep = {c["file"] for c in candidates}
+        library = [d for d in library if d["file"] in keep]
+    position = {d["file"]: i for i, d in enumerate(library)}
+    queries = [{**c, "target": position[c["file"]]} for c in candidates]
 
     stats = {
-        "reels_listed": sum(excluded.values()) + len(items),
-        "reels_used": len(items),
-        "excluded": excluded,
-        "avg_query_words": round(float(np.mean([word_count(i["query"]) for i in items])), 1) if items else 0,
-        "avg_transcript_words": round(float(np.mean([word_count(i["doc"]) for i in items])), 1) if items else 0,
-        "query_script": _script_mix([i["query"] for i in items]),
-        "transcript_script": _script_mix([i["doc"] for i in items]),
+        "reels_listed": len(rows),
+        "library_size": len(library),
+        "queries": len(queries),
+        "not_in_library": not_in_library,
+        "not_query": not_query,
+        "avg_query_words": round(float(np.mean([word_count(q["query"]) for q in queries])), 1) if queries else 0,
+        "avg_transcript_words": round(float(np.mean([word_count(d["doc"]) for d in library])), 1) if library else 0,
+        "query_script": _script_mix([q["query"] for q in queries]),
+        "transcript_script": _script_mix([d["doc"] for d in library]),
     }
-    return items, stats
+    return {"library": library, "queries": queries}, stats
 
 
 def _script_mix(texts: list[str]) -> dict[str, int]:
@@ -94,8 +141,8 @@ def _script_mix(texts: list[str]) -> dict[str, int]:
     return counts
 
 
-def load_dataset(creator_names: list[str] | None,
-                 transcripts_name: str = TRANSCRIPTS_FILE) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+def load_dataset(creator_names: list[str] | None, transcripts_name: str = TRANSCRIPTS_FILE,
+                 query_source: str = "caption", library_mode: str = "all") -> tuple[dict[str, dict], dict[str, dict]]:
     if not DATA_DIR.exists():
         raise SystemExit(f"No data folder at {DATA_DIR} — see README.md")
     dirs = sorted(d for d in DATA_DIR.iterdir() if (d / CAPTIONS_FILE).exists())
@@ -104,15 +151,17 @@ def load_dataset(creator_names: list[str] | None,
 
     dataset, stats = {}, {}
     for d in dirs:
-        items, s = load_creator(d, transcripts_name)
+        data, s = load_creator(d, transcripts_name, query_source, library_mode)
         stats[d.name] = s
-        s["skipped"] = len(items) < MIN_REELS
+        n = len(data["queries"])
+        s["skipped"] = n < MIN_REELS
         if s["skipped"]:
-            print(f"[E1] SKIP {d.name}: only {len(items)} usable reels (need {MIN_REELS}+). Excluded: {s['excluded']}")
+            print(f"[E1] SKIP {d.name}: only {n} usable queries (need {MIN_REELS}+). "
+                  f"Not in library: {s['not_in_library']}; no query: {s['not_query']}")
             continue
-        if len(items) < RECOMMENDED_REELS:
-            print(f"[E1] WARNING {d.name}: {len(items)} usable reels — {RECOMMENDED_REELS}+ recommended")
-        dataset[d.name] = items
+        if n < RECOMMENDED_REELS:
+            print(f"[E1] WARNING {d.name}: {n} usable queries — {RECOMMENDED_REELS}+ recommended")
+        dataset[d.name] = data
     if not dataset:
         raise SystemExit("No creator has enough usable reels. Run prepare_data.py and check captions.csv.")
     return dataset, stats
@@ -120,29 +169,30 @@ def load_dataset(creator_names: list[str] | None,
 
 # ─── Evaluation ────────────────────────────────────────────────────────────────
 
-def evaluate_method(name: str, dataset: dict[str, list[dict]]) -> dict:
+def evaluate_method(name: str, dataset: dict[str, dict]) -> dict:
     retriever = make_retriever(name)
     per_creator, all_ranks, queries_out = {}, [], []
     index_s = query_s = 0.0
     n_queries = 0
 
-    for creator, items in dataset.items():
+    for creator, data in dataset.items():
+        library, queries = data["library"], data["queries"]
         started = time.perf_counter()
-        retriever.index([i["doc"] for i in items])
+        retriever.index([d["doc"] for d in library])
         index_s += time.perf_counter() - started
 
         started = time.perf_counter()
-        scores = retriever.score([i["query"] for i in items])
+        scores = retriever.score([q["query"] for q in queries])
         query_s += time.perf_counter() - started
-        n_queries += len(items)
+        n_queries += len(queries)
 
-        ranks = correct_ranks(scores)
+        ranks = correct_ranks(scores, [q["target"] for q in queries])
         all_ranks.extend(ranks.tolist())
         per_creator[creator] = summarize(ranks)
         top1 = np.argmax(scores, axis=1)
-        for i, item in enumerate(items):
-            queries_out.append({"creator": creator, "file": item["file"], "query": item["query"],
-                                "rank": int(ranks[i]), "top1_file": items[top1[i]]["file"]})
+        for i, q in enumerate(queries):
+            queries_out.append({"creator": creator, "file": q["file"], "query": q["query"],
+                                "rank": int(ranks[i]), "top1_file": library[top1[i]]["file"]})
 
     all_ranks = np.array(all_ranks)
     macro = {m: float(np.mean([per_creator[c][m] for c in per_creator])) for m in METRIC_COLS}
@@ -171,21 +221,23 @@ def summary_markdown(results: list[dict], baseline: dict, stats: dict, dataset: 
     ok = sorted((r for r in results if "error" not in r), key=lambda r: -r["macro"]["MRR"])
     creators = list(dataset)
     lines = [
-        "# E1 — Caption → transcript retrieval",
+        f"# E1 — {config['query_source'].capitalize()} → transcript retrieval",
         "",
         f"Run: {config['timestamp']} · device: {config['device']} · "
-        f"{len(creators)} creators, {sum(len(v) for v in dataset.values())} queries",
+        f"{len(creators)} creators, {sum(len(v['queries']) for v in dataset.values())} queries · "
+        f"queries: {config['query_source']} · library: {config['library_mode']}",
         "",
         "## Dataset",
         "",
-        "| Creator | Reels used / listed | Avg caption words | Avg transcript words | Caption script | Transcript script | Excluded |",
-        "|---|---|---|---|---|---|---|",
+        "| Creator | Reels listed | Library (docs) | Queries | Avg query words | Avg transcript words "
+        "| Query script | Transcript script | Not in library | No usable query |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, s in stats.items():
-        label = f"{name} (skipped: < {MIN_REELS} usable reels)" if s.get("skipped") else name
-        lines.append(f"| {label} | {s['reels_used']} / {s['reels_listed']} | {s['avg_query_words']} | "
-                     f"{s['avg_transcript_words']} | {s['query_script']} | {s['transcript_script']} | "
-                     f"{s['excluded'] or '—'} |")
+        label = f"{name} (skipped: < {MIN_REELS} queries)" if s.get("skipped") else name
+        lines.append(f"| {label} | {s['reels_listed']} | {s['library_size']} | {s['queries']} | "
+                     f"{s['avg_query_words']} | {s['avg_transcript_words']} | {s['query_script']} | "
+                     f"{s['transcript_script']} | {s['not_in_library'] or '—'} | {s['not_query'] or '—'} |")
 
     lines += [
         "",
@@ -240,11 +292,18 @@ def main():
     parser.add_argument("--tag", default="", help="suffix for output files, e.g. 'whisper-medium'")
     parser.add_argument("--transcripts", default=TRANSCRIPTS_FILE,
                         help="transcripts file in each creator folder (see prepare_data.py --out)")
+    parser.add_argument("--queries", dest="query_source", choices=["caption", "topic"], default="caption",
+                        help="caption: cleaned Instagram caption; topic: hand-written topics.csv "
+                             "(see make_topic_sheet.py)")
+    parser.add_argument("--library", dest="library_mode", choices=["all", "queryable"], default="all",
+                        help="all: every transcribed reel is searched (reels without a query are "
+                             "distractors); queryable: only reels that have a query (E1 v1 setup)")
     args = parser.parse_args()
 
     methods = args.methods or (QUICK_METHODS if args.quick else DEFAULT_METHODS)
-    dataset, stats = load_dataset(args.creators, args.transcripts)
-    baseline = {m: float(np.mean([random_baseline(len(v))[m] for v in dataset.values()])) for m in METRIC_COLS}
+    dataset, stats = load_dataset(args.creators, args.transcripts, args.query_source, args.library_mode)
+    baseline = {m: float(np.mean([random_baseline(len(v["library"]))[m] for v in dataset.values()]))
+                for m in METRIC_COLS}
 
     import torch
     config = {
@@ -253,10 +312,13 @@ def main():
         "python": platform.python_version(),
         "methods": methods,
         "transcripts": args.transcripts,
+        "query_source": args.query_source,
+        "library_mode": args.library_mode,
         "min_query_words": MIN_QUERY_WORDS,
         "min_transcript_words": MIN_TRANSCRIPT_WORDS,
     }
-    print(f"[E1] {len(dataset)} creators: " + ", ".join(f"{k} ({len(v)})" for k, v in dataset.items()))
+    print(f"[E1] {len(dataset)} creators: " + ", ".join(
+        f"{k} ({len(v['queries'])} queries / {len(v['library'])} docs)" for k, v in dataset.items()))
 
     results = []
     for name in methods:

@@ -128,3 +128,29 @@ within ~2 points of the best, since everything runs locally.
   better script — that is E2.
 - Small per-creator libraries (15–20 reels) make the task easier than a
   large library would; report the random baseline alongside.
+
+## E1 v2 — more data, distractors, topic queries
+
+**1. Download reels automatically** (replaces savefrom.net). In Chrome, logged
+in, open the creator's profile, refresh, `Ctrl+Shift+I` → Console, paste
+`collect_reels.js`, answer "50". It scrolls the page itself and saves
+`Downloads/<username>_reels.json` (captions + video links; links expire after a
+few hours). Then:
+
+```powershell
+python download_reels.py --json "$env:USERPROFILE\Downloads\<username>_reels.json" --creator "<Name> v2"
+python prepare_data.py --creators "<Name> v2" --language en
+```
+
+**2. Distractor library (default).** Every transcribed reel is searched, even
+if its caption is empty or a teaser; such reels are not used as queries.
+`--library queryable` restores the v1 setup (only reels with a usable query).
+
+**3. Topic queries.** `python make_topic_sheet.py --creators "<Name> v2"` writes
+`data/<Name> v2/topics.csv`; fill the `topic` column (rules in the script's
+docstring), then:
+
+```powershell
+python run_e1.py --creators "Rabika Tahir v2" "Hamza Bhatti v2" "Tech Wisdom v2" --queries caption --tag v2_caption
+python run_e1.py --creators "Rabika Tahir v2" "Hamza Bhatti v2" "Tech Wisdom v2" --queries topic   --tag v2_topic
+```

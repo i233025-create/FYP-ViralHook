@@ -9,3 +9,4 @@ rank-bm25>=0.2.2
 faster-whisper>=1.0
 numpy>=1.24
 pytest>=8.0
+requests>=2.31

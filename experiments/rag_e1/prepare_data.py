@@ -95,7 +95,15 @@ def prepare_creator(creator_dir: Path, model_size: str, language: str | None,
             print(f"  [{i}/{len(todo)}] {row['file']}: FILE NOT FOUND — skipped")
             continue
         started = time.time()
-        result = transcribe(get_model(), video, language)
+        model = get_model()  # outside the try: a model that fails to load must stop the run
+        try:
+            result = transcribe(model, video, language)
+        except Exception as exc:
+            # e.g. a reel with no audio track (PyAV IndexError): record it as
+            # no speech so run_e1 excludes it and later runs don't retry it.
+            result = {"text": "", "language": None, "language_prob": 0.0,
+                      "script": detect_script(""), "error": f"{type(exc).__name__}: {exc}"}
+            print(f"  [{i}/{len(todo)}] {row['file']}: NO AUDIO / unreadable ({result['error'][:60]}) — saved as no speech")
         result.update({"whisper_model": model_size, "forced_language": language})
         done[row["file"]] = result
         # Save after every file so an interrupted run keeps its progress.
