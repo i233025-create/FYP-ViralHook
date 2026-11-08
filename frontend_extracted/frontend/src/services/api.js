@@ -2,12 +2,17 @@
 // VIRALHOOK — API SERVICE LAYER
 //
 // Real backend (FastAPI, uvicorn server:app --port 8000) is the default for
-// onboarding profile, research, scripting, XML export and AI video.
-// Auth, new-creator onboarding and publishing stay mocked (no backend yet).
+// accounts, onboarding profile, research, scripting, XML export and AI video.
+// New-creator onboarding and publishing stay mocked (no backend yet).
+//
+// The UI calls the API at /api on its own origin (Vite dev proxy, nginx in
+// Docker), so session cookies are first-party. Sessions are httpOnly cookies:
+// this file never sees a token. A 401 triggers one silent /auth/refresh and a
+// retry; if that fails, the app returns to the sign-in screen.
 //
 // Override in frontend/.env.local:
 //   VITE_USE_REAL_BACKEND=false        → whole UI on mock data (offline demo)
-//   VITE_API_BASE=http://host:8000     → backend on another machine
+//   VITE_API_TARGET=http://host:8000   → where the dev proxy sends /api
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -30,46 +35,139 @@ const PROFILE_POLL_MS = 2000
 
 // ── Backend switch ─────────────────────────────────────────────────────────
 export const USE_REAL_BACKEND = import.meta.env.VITE_USE_REAL_BACKEND !== 'false'
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-async function apiFetch(path, body) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `Server error ${res.status}`)
+/** An API failure with the HTTP status (0 = server unreachable). */
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
   }
-  return res.json()
 }
+
+// FastAPI sends `detail` as a string, or as a list of field errors (422).
+function detailMessage(detail) {
+  if (!detail) return ''
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail.map((d) => {
+      const field = d.loc?.[d.loc.length - 1]
+      if (field === 'email') return 'Please enter a valid email address.'
+      return field ? `${field}: ${d.msg}` : d.msg
+    }).join(' ')
+  }
+  return String(detail)
+}
+
+// The app shell registers what to do when a session can't be renewed.
+let onSessionExpired = () => {}
+export function setSessionExpiredHandler(fn) { onSessionExpired = fn }
+
+// Several requests may get a 401 at once; they share one refresh call.
+let refreshing = null
+function refreshSession() {
+  refreshing ||= fetch(`${API_BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+    .then((r) => r.ok)
+    .catch(() => false)
+    .finally(() => { refreshing = null })
+  return refreshing
+}
+
+/**
+ * The one way to call the backend. Sends the session cookies, renews an
+ * expired session once and retries, and turns errors into ApiError with a
+ * readable message.
+ */
+async function request(path, { method = 'GET', json, form, retry = true } = {}) {
+  const init = { method, credentials: 'include', headers: {} }
+  if (json !== undefined) {
+    init.headers['Content-Type'] = 'application/json'
+    init.body = JSON.stringify(json)
+  }
+  if (form) init.body = form
+
+  let res
+  try {
+    res = await fetch(`${API_BASE}${path}`, init)
+  } catch {
+    throw new ApiError("Can't reach the ViralHook server. Check that the backend is running.", 0)
+  }
+  if (res.status === 401 && retry && !path.startsWith('/auth/')) {
+    if (await refreshSession()) return request(path, { method, json, form, retry: false })
+    onSessionExpired()
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new ApiError(detailMessage(err.detail) || `Server error ${res.status}`, res.status)
+  }
+  return res.status === 204 ? null : res.json()
+}
+
+const apiFetch = (path, body) => request(path, { method: 'POST', json: body })
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-/**
- * POST /auth/login
- * Returns: { user } | throws Error
- */
+/** POST /auth/login → { user } */
 export async function loginUser({ email, password }) {
-  await delay(900)
-  const user = MOCK_USERS.find(
-    (u) => u.email === email && u.password === password
-  )
-  if (!user) throw new Error('Invalid email or password.')
-  const { password: _, ...safe } = user
-  return { user: safe }
+  if (!USE_REAL_BACKEND) {
+    await delay(600)
+    const user = MOCK_USERS.find((u) => u.email === email && u.password === password)
+    if (!user) throw new ApiError('Wrong email or password.', 401)
+    const { password: _, ...safe } = user
+    return { user: { ...safe, emailVerified: true } }
+  }
+  return request('/auth/login', { method: 'POST', json: { email, password } })
+}
+
+/** POST /auth/signup → { user } (signed in; a verification email is sent) */
+export async function signupUser({ name, email, password }) {
+  if (!USE_REAL_BACKEND) {
+    await delay(600)
+    return { user: { id: 'u_' + Date.now(), name, email, emailVerified: true } }
+  }
+  return request('/auth/signup', { method: 'POST', json: { name, email, password } })
+}
+
+/** POST /auth/logout — ends this device's session (best effort). */
+export async function logoutUser() {
+  if (!USE_REAL_BACKEND) return
+  await request('/auth/logout', { method: 'POST' }).catch(() => {})
 }
 
 /**
- * POST /auth/signup
- * Returns: { user }
+ * The signed-in user, or null. Renews an expired access cookie once, so a
+ * returning visitor with a valid refresh cookie stays signed in.
  */
-export async function signupUser({ name, email, password }) {
-  await delay(1000)
-  // Mock: any signup succeeds
-  return {
-    user: { id: 'u_' + Date.now(), name, email, handle: '@' + name.toLowerCase().replace(/\s+/g, '') },
+export async function getCurrentUser() {
+  if (!USE_REAL_BACKEND) return null
+  try {
+    return (await request('/auth/me')).user
+  } catch (err) {
+    if (err.status !== 401) throw err
+  }
+  if (!(await refreshSession())) return null
+  try {
+    return (await request('/auth/me')).user
+  } catch (err) {
+    if (err.status === 401) return null
+    throw err
+  }
+}
+
+export const verifyEmail = (token) => request('/auth/verify-email', { method: 'POST', json: { token } })
+export const resendVerification = () => request('/auth/resend-verification', { method: 'POST' })
+export const requestPasswordReset = (email) => request('/auth/forgot-password', { method: 'POST', json: { email } })
+export const resetPassword = (token, password) =>
+  request('/auth/reset-password', { method: 'POST', json: { token, password } })
+
+/** GET /onboarding/profile → the signed-in user's creator profile, or null if none yet. */
+export async function getCreatorProfile() {
+  if (!USE_REAL_BACKEND) return null
+  try {
+    return (await request('/onboarding/profile')).profile
+  } catch (err) {
+    if (err.status === 404) return null
+    throw err
   }
 }
 
@@ -97,35 +195,18 @@ export async function processCreatorVideos({ files = [], handle, niche, onStep }
     form.append('handle', handle || '')
     form.append('niche', niche || '')
 
-    let res
-    try {
-      res = await fetch(`${API_BASE}/onboarding/upload`, { method: 'POST', body: form })
-    } catch (_) {
-      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `Upload failed (${res.status})`)
-    }
-    const { jobId } = await res.json()
+    const { jobId } = await request('/onboarding/upload', { method: 'POST', form })
 
     for (;;) {
       await delay(PROFILE_POLL_MS)
-      const r = await fetch(`${API_BASE}/onboarding/status/${jobId}`)
-      if (!r.ok) throw new Error(`Profile status error ${r.status}`)
-      const job = await r.json()
+      const job = await request(`/onboarding/status/${jobId}`)
       if (onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
       if (job.status === 'error') throw new Error(job.error || 'Profile extraction failed')
       if (job.status === 'done') break
     }
 
     const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
-    const p = await fetch(`${API_BASE}/onboarding/profile?${params}`)
-    if (!p.ok) {
-      const err = await p.json().catch(() => ({}))
-      throw new Error(err.detail || `Profile request failed (${p.status})`)
-    }
-    return { profile: (await p.json()).profile }
+    return { profile: (await request(`/onboarding/profile?${params}`)).profile }
   }
 
   const steps = [
@@ -290,9 +371,7 @@ export async function generateAIVideo({ plan, mode = 'personalised', assetLibrar
     const { jobId } = await apiFetch('/video/generate', { plan, mode, assetLibraryId, sceneAssets })
     for (;;) {
       await delay(VIDEO_POLL_MS)
-      const res = await fetch(`${API_BASE}/video/status/${jobId}`)
-      if (!res.ok) throw new Error(`Video status error ${res.status}`)
-      const job = await res.json()
+      const job = await request(`/video/status/${jobId}`)
       if (job.step && onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
       if (job.status === 'error') throw new Error(job.error || 'Video generation failed')
       if (job.status === 'done') {
@@ -325,17 +404,7 @@ export async function uploadCreatorPhotos(files) {
   if (USE_REAL_BACKEND) {
     const form = new FormData()
     files.forEach((f) => form.append('files', f, f.name))
-    let res
-    try {
-      res = await fetch(`${API_BASE}/assets/upload`, { method: 'POST', body: form })
-    } catch (_) {
-      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
-    }
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `Upload failed (${res.status})`)
-    }
-    return res.json()
+    return request('/assets/upload', { method: 'POST', form })
   }
   await delay(500)
   return { libraryId: 'mock', photos: files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })) }

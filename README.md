@@ -140,9 +140,27 @@ cd "fyp poc/frontend_extracted/frontend"
 npm run dev
 ```
 
-Open `http://localhost:5173`
+Open `http://localhost:5173`. The UI reaches the backend through the Vite
+proxy at `/api` (see `vite.config.js`), so keep the backend on port 8000 or set
+`VITE_API_TARGET`. `VITE_USE_REAL_BACKEND=false` in `.env.local` runs the whole
+UI on mock data instead.
 
-Set `USE_REAL_BACKEND = true` in `src/services/api.js` to connect to real backend.
+### Accounts (backend/)
+
+- Sign up in the app. Every user gets their own workspace in
+  `data/users/<id>/` (videos, ChromaDB, profiles, photos, renders); the
+  database is `data/viralhook.db`. `data/` is git-ignored.
+- The database is created and migrated automatically when the server starts.
+- In development, emails (verify / reset-password links) are **printed in the
+  backend terminal** instead of being sent.
+- To give the pre-accounts creator profile (the one in
+  `module1_style_extraction/` and `module2_multimodal_rag/`) to your account,
+  stop the server and run once:
+  ```bash
+  module1_style_extraction\venv\Scripts\python.exe -m backend.migrate_legacy_creator --email you@example.com
+  ```
+- Production: set `APP_ENV=production`, a long random `JWT_SECRET`,
+  `ALLOWED_ORIGINS` and `FRONTEND_URL` (see `backend/config.py`).
 
 ---
 

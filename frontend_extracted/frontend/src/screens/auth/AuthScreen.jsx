@@ -1,34 +1,55 @@
 import { useState } from 'react'
-import { Zap, Mail, Lock, User } from 'lucide-react'
+import { Zap } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { loginUser, signupUser } from '../../services/api'
+import { USE_REAL_BACKEND, loginUser, signupUser, requestPasswordReset } from '../../services/api'
 import { Btn, Input, Divider, Alert } from '../../components/ui'
 
+const MIN_PASSWORD = 8
+
+const COPY = {
+  login:  { title: 'Welcome back',    subtitle: 'Sign in to continue to your workspace.', button: 'Sign In' },
+  signup: { title: 'Create account',  subtitle: 'Get started with ViralHook.',            button: 'Create Account' },
+  forgot: { title: 'Reset password',  subtitle: "Enter your email and we'll send you a reset link.", button: 'Send Reset Link' },
+}
+
 export default function AuthScreen() {
-  const { setUser, navigate } = useApp()
-  const [mode, setMode] = useState('login') // 'login' | 'signup'
-  const [form, setForm] = useState({ name: '', email: 'demo@viralhook.ai', password: 'demo1234' })
+  const { enterApp, authNotice, setAuthNotice } = useApp()
+  const [mode, setMode] = useState('login') // 'login' | 'signup' | 'forgot'
+  const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [error, setError] = useState('')
+  const [sent, setSent] = useState('')       // forgot-password confirmation
   const [loading, setLoading] = useState(false)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const switchMode = (m) => { setMode(m); setError(''); setSent(''); setAuthNotice('') }
 
   const submit = async (e) => {
     e.preventDefault()
     setError('')
+    if (mode === 'signup' && form.password.length < MIN_PASSWORD) {
+      setError(`Password must be at least ${MIN_PASSWORD} characters.`)
+      return
+    }
     setLoading(true)
     try {
+      if (mode === 'forgot') {
+        const res = await requestPasswordReset(form.email)
+        setSent(res?.detail || 'If an account exists for this email, a reset link is on its way.')
+        return
+      }
       const res = mode === 'login'
         ? await loginUser({ email: form.email, password: form.password })
         : await signupUser({ name: form.name, email: form.email, password: form.password })
-      setUser(res.user)
-      navigate('creator-type')
+      setAuthNotice('')
+      await enterApp(res.user)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }
+
+  const copy = COPY[mode]
 
   return (
     <div className="flex h-screen w-screen bg-discord-dark overflow-hidden">
@@ -63,7 +84,7 @@ export default function AuthScreen() {
           </div>
         </div>
 
-        <p className="text-discord-faint text-xs">Final Year Project — ViralHook v1.0 Frontend Prototype</p>
+        <p className="text-discord-faint text-xs">ViralHook — AI content studio for short-form creators</p>
       </div>
 
       {/* Right panel — form */}
@@ -77,39 +98,53 @@ export default function AuthScreen() {
             <span className="text-discord-white font-bold">ViralHook</span>
           </div>
 
-          <h2 className="text-discord-white font-bold text-2xl mb-1">
-            {mode === 'login' ? 'Welcome back' : 'Create account'}
-          </h2>
-          <p className="text-discord-muted text-sm mb-6">
-            {mode === 'login' ? "Sign in to continue to your workspace." : 'Get started with ViralHook.'}
-          </p>
+          <h2 className="text-discord-white font-bold text-2xl mb-1">{copy.title}</h2>
+          <p className="text-discord-muted text-sm mb-6">{copy.subtitle}</p>
 
-          {/* Demo hint */}
-          {mode === 'login' && (
+          {authNotice && <Alert type="warning">{authNotice}</Alert>}
+          {!USE_REAL_BACKEND && mode === 'login' && (
             <Alert type="info">
-              <span className="font-semibold">Demo credentials:</span>{' '}
-              demo@viralhook.ai / demo1234
+              <span className="font-semibold">Offline demo:</span> demo@viralhook.ai / demo1234
             </Alert>
           )}
 
-          <form onSubmit={submit} className="space-y-4 mt-5">
-            {mode === 'signup' && (
-              <Input label="Full name" value={form.name} onChange={set('name')} placeholder="Alex Rivera" required />
-            )}
-            <Input label="Email" type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required />
-            <Input label="Password" type="password" value={form.password} onChange={set('password')} placeholder="••••••••" required />
+          {sent ? (
+            <div className="space-y-4 mt-5">
+              <Alert type="success">{sent}</Alert>
+              <Btn size="lg" variant="secondary" className="w-full" onClick={() => switchMode('login')}>
+                Back to Sign In
+              </Btn>
+            </div>
+          ) : (
+            <form onSubmit={submit} className="space-y-4 mt-5">
+              {mode === 'signup' && (
+                <Input label="Full name" value={form.name} onChange={set('name')} placeholder="Alex Rivera"
+                       autoComplete="name" required />
+              )}
+              <Input label="Email" type="email" value={form.email} onChange={set('email')} placeholder="you@example.com"
+                     autoComplete="email" required />
+              {mode !== 'forgot' && (
+                <Input label="Password" type="password" value={form.password} onChange={set('password')}
+                       placeholder={mode === 'signup' ? `At least ${MIN_PASSWORD} characters` : '••••••••'}
+                       autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
+              )}
+              {mode === 'login' && (
+                <button type="button" onClick={() => switchMode('forgot')}
+                        className="text-discord-link text-xs hover:underline">
+                  Forgot password?
+                </button>
+              )}
 
-            {error && <Alert type="error">{error}</Alert>}
+              {error && <Alert type="error">{error}</Alert>}
 
-            <Btn type="submit" size="lg" loading={loading} className="w-full mt-2">
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
-            </Btn>
-          </form>
+              <Btn type="submit" size="lg" loading={loading} className="w-full mt-2">{copy.button}</Btn>
+            </form>
+          )}
 
           <Divider label="or" />
 
           <button
-            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError('') }}
+            onClick={() => switchMode(mode === 'signup' ? 'login' : mode === 'forgot' ? 'login' : 'signup')}
             className="w-full text-center text-discord-muted text-sm hover:text-discord-white transition-colors"
           >
             {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}

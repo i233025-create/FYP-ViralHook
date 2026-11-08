@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { resendVerification } from '../services/api'
 import {
   LayoutDashboard, Lightbulb, FileText, Clapperboard,
   Download, Instagram, LogOut, Zap, ChevronRight, Hash
@@ -42,11 +44,12 @@ function isUnlocked(s, { creatorProfile, selectedTopic, selectedVariant, product
 
 export default function AppShell({ children }) {
   const {
-    screen, navigate, logout,
+    screen, navigate, logout, user,
     creatorProfile, selectedTopic, selectedVariant, productionPlan,
   } = useApp()
 
-  const noShell = ['auth', 'creator-type', 'onboarding-new', 'onboarding-experienced'].includes(screen)
+  const noShell = ['boot', 'auth', 'verify-email', 'reset-password',
+                   'creator-type', 'onboarding-new', 'onboarding-experienced'].includes(screen)
   if (noShell) return <>{children}</>
 
   const headerLabel = SCREEN_META[screen]?.label || 'ViralHook'
@@ -139,11 +142,38 @@ export default function AppShell({ children }) {
           )}
         </header>
 
+        {user && user.emailVerified === false && <VerifyBanner email={user.email} />}
+
         {/* Page content */}
         <div className="flex-1 overflow-y-auto">
           {children}
         </div>
       </main>
+    </div>
+  )
+}
+
+// Soft email verification: the app works, but Instagram and payments will
+// need a verified address, so remind the user (backend/auth.require_verified).
+function VerifyBanner({ email }) {
+  const [state, setState] = useState('idle') // idle | sending | sent | error
+  const resend = async () => {
+    setState('sending')
+    try {
+      await resendVerification()
+      setState('sent')
+    } catch {
+      setState('error')
+    }
+  }
+  return (
+    <div className="flex-shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-2 bg-discord-yellow/10 border-b border-discord-yellow/30 text-discord-yellow text-xs">
+      <span>Please verify your email — we sent a link to <span className="font-semibold">{email}</span>.</span>
+      {state === 'sent'
+        ? <span className="text-discord-green">New link sent.</span>
+        : <button onClick={resend} disabled={state === 'sending'} className="underline hover:text-discord-white disabled:opacity-50">
+            {state === 'sending' ? 'Sending…' : state === 'error' ? 'Try again' : 'Resend link'}
+          </button>}
     </div>
   )
 }
