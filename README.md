@@ -37,7 +37,10 @@ fyp poc/
 ├── pipeline/
 │   ├── agents/
 │   │   ├── research_agent.py          # LLM trend research
-│   │   └── scripting_agent.py         # 3-mode scripting + evaluator
+│   │   ├── scripting_agent.py         # 3-mode scripting + evaluator
+│   │   └── video_agent.py             # Module 4: script → MP4 + measured evaluation
+│   ├── video/                         # Module 4 building blocks (TTS, shots, assets,
+│   │                                  #   SDXL, FFmpeg renderer, evaluator)
 │   ├── state.py                       # LangGraph pipeline state
 │   └── json_to_premiere_xml.py        # XMEML v4 export
 ├── frontend_extracted/frontend/       # React 18 + Vite + Tailwind
@@ -143,6 +146,45 @@ Set `USE_REAL_BACKEND = true` in `src/services/api.js` to connect to real backen
 
 ---
 
+## Full Local Stack (GPU machine)
+
+Everything runs locally; only research needs a YouTube key.
+
+```bash
+# 1. Python env (Python 3.10+, CUDA GPU)
+python -m venv .venv && source .venv/bin/activate
+pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+pip install -r pipeline/requirements.txt -r pipeline/video/requirements.txt fastapi uvicorn python-dotenv
+
+# 2. Local LLM
+ollama serve &            # or ~/.local/ollama/bin/ollama serve
+ollama pull qwen2.5:7b
+
+# 3. Config: copy pipeline/.env.example → .env (repo root), fill YOUTUBE_API_KEY
+#    (and PEXELS_API_KEY for stock footage)
+
+# 4. Backend + frontend
+uvicorn server:app --port 8000
+cd frontend_extracted/frontend && npm run dev     # real backend is the default
+```
+
+Set `VITE_USE_REAL_BACKEND=false` in `frontend_extracted/frontend/.env.local` for an offline mock demo.
+
+### Module 4 — Video Generation (CLI)
+
+```bash
+python -m pipeline.agents.video_agent                # personalised video
+python -m pipeline.agents.video_agent --compare      # personalised vs generic + score deltas
+# output: pipeline/output/video/<job>/final.mp4, timeline.json, evaluation.json
+```
+
+Personalised mode cuts at the creator's measured shot length, calibrates the
+voiceover to their words-per-minute, uses karaoke captions when they use text
+overlays, and ranks shots toward their visual look (Module 2 CLIP vectors).
+The evaluator re-measures the rendered MP4 with Module 2's own extractors.
+
+---
+
 ## Running the Pipeline (CLI)
 
 ### Module 1 — Text-based RAG (baseline)
@@ -243,6 +285,9 @@ chore: update requirements.txt
 | `POST` | `/research/trends` | LLM trend research |
 | `POST` | `/script/generate` | 3-mode RAG scripting |
 | `POST` | `/export/xml` | Premiere Pro XML export |
+| `POST` | `/video/generate` | Start a video render job → `jobId` |
+| `GET` | `/video/status/{jobId}` | Progress; timeline + evaluation when done |
+| `GET` | `/video/file/{jobId}` | Rendered MP4 |
 
 API docs available at `http://localhost:8000/docs` when server is running.
 

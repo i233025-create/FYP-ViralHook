@@ -92,6 +92,7 @@ class PipelineState(TypedDict):
       ResearchAgent → sets research_output (or research_error)
       ScriptingAgent→ sets scripting_output (or scripting_error)
       VisualsAgent  → sets visual_prompts (or visual_error)
+      VideoAgent    → sets video_output (or video_error)
     """
 
     # ── Entry point fields (set before graph execution starts) ────────────────
@@ -107,16 +108,22 @@ class PipelineState(TypedDict):
     # ── Research Agent outputs ─────────────────────────────────────────────────
     # Set by research_agent.py. None until that node runs.
     research_output: Optional[dict]
-    # Schema of research_output when successful:
+    # Schema of research_output (see agents/research_agent.py):
     # {
-    #   "topic": str,
-    #   "trend_score": float,
-    #   "trend_signals": {"velocity": float, "engagement_rate": float},
+    #   "topic": str,                      # top trend (read by ScriptingAgent)
+    #   "trend_score": float,              # 0-1, measured — never LLM-made
+    #   "trend_signals": {"velocity": float, "engagement_rate": float, "outlier": float},
+    #   "creator_fit": float,              # cosine vs recurring_topics
+    #   "why_trending": str, "suggested_angle": str,
     #   "niche": str,
     #   "supporting_evidence": [
-    #       {"keyword": str, "peak_interest": int, "timeframe": str}
+    #       {"video_title": str, "channel": str, "views": int,
+    #        "published_hours_ago": float, "url": str}
     #   ],
-    #   "related_keywords": [str]
+    #   "related_keywords": [str],         # search queries used
+    #   "cluster_size": int, "low_confidence": bool,
+    #   "source": "youtube_data_api" | "profile_fallback",
+    #   "trends": [ ...all ranked trends with full evidence... ]
     # }
     research_error: Optional[str]
 
@@ -129,3 +136,10 @@ class PipelineState(TypedDict):
     # Set by visuals_agent.py (Module 3). None until that node runs.
     visual_prompts: Optional[list]
     visual_error: Optional[str]
+
+    # ── Video Agent outputs ────────────────────────────────────────────────────
+    # Set by agents/video_agent.py (Module 4). None until that node runs.
+    # Schema: {"job_id", "mode", "video_path", "timeline_path",
+    #          "evaluation": {"measured", "target", "scores", "clip_alignment", "asset_sources"}}
+    video_output: Optional[dict]
+    video_error: Optional[str]

@@ -56,7 +56,7 @@ def main():
     console.print(Panel.fit(
         "[bold cyan]Module 2: Multimodal RAG Pipeline[/bold cyan]\n"
         "  → Transcription:   Whisper (reused from Module 1)\n"
-        "  → Text Profile:    LLM via Groq\n"
+        "  → Text Profile:    LLM (local Ollama by default, Groq optional)\n"
         "  → Visual:          CLIP ViT-B/32 (open-clip-torch)\n"
         "  → Shot Detection:  PySceneDetect\n"
         "  → Audio:           librosa\n"
@@ -66,11 +66,12 @@ def main():
     ))
 
     # ── Pre-flight checks ──────────────────────────────────────────────────────
+    # Text profiling uses the shared LLM client (local Ollama by default)
     groq_api_key = os.getenv("GROQ_API_KEY", "")
-    if not groq_api_key:
-        console.print("[red]✗ GROQ_API_KEY not found in .env[/red]")
+    if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" and not groq_api_key:
+        console.print("[red]✗ LLM_PROVIDER=groq but GROQ_API_KEY not found in .env[/red]")
         sys.exit(1)
-    console.print(f"[green]✓ GROQ_API_KEY detected[/green]")
+    console.print(f"[green]✓ LLM provider: {os.getenv('LLM_PROVIDER', 'ollama')}[/green]")
 
     if not INPUT_VIDEOS_DIR.exists():
         console.print(f"[red]✗ Input video directory not found: {INPUT_VIDEOS_DIR}[/red]")
@@ -124,6 +125,11 @@ def main():
             console.print(f"  [yellow]⚠ {len(result['errors'])} non-fatal error(s):[/yellow]")
             for err in result["errors"]:
                 console.print(f"    · {err}")
+
+    if not any(any(r.get("visual_vector") or []) for r in all_results):
+        console.print("[red]✗ Visual (CLIP) branch failed for every video — refusing to save "
+                      "zero vectors. See the errors above.[/red]")
+        sys.exit(1)
 
     # ── Build master multimodal profile ───────────────────────────────────────
     console.rule("[bold cyan]Synthesising Multimodal Creator Profile[/bold cyan]")

@@ -1,96 +1,114 @@
 {
-  "creator_niche": "Motivational Self‑Help & Everyday Life Commentary",
+  "creator_niche": "Self-Improvement and Motivational Content",
   "signature_hooks": [
     "Contrarian",
-    "Bold Claim",
-    "Curiosity Gap"
+    "Curiosity Gap",
+    "Bold Claim"
   ],
-  "dominant_tone": "Inspirational",
-  "avg_pacing": "Fast-paced",
+  "dominant_tone": "Conversational",
+  "avg_pacing": "Moderate",
   "typical_structure": "Hook → Explanation",
-  "target_audience": "Young adults (18‑35) seeking motivation, self‑improvement, and relatable commentary on everyday life",
+  "target_audience": "Individuals seeking motivation and self-improvement, likely in the early to mid stages of their journey",
   "recurring_topics": [
-    "Motivation & Self‑Improvement",
-    "Mortality & Life Philosophy",
-    "Everyday Frustrations",
-    "Relatable Rants",
-    "Inspirational Life Advice"
+    "Comparison and Progress",
+    "Life and Mortality",
+    "Technology and Future"
   ],
-  "content_style_summary": "The creator blends motivational messaging with quick, punchy delivery, often starting with a contrarian or bold hook that immediately grabs attention. Their tone remains largely inspirational, though they sprinkle sarcasm for humor and relatability. Pacing is fast, with concise explanations and actionable advice that encourages viewers to reflect on their own journey. The content focuses on personal growth and everyday realities, making it both uplifting and grounded.",
+  "content_style_summary": "The creator's content is characterized by a conversational and inspirational tone, focusing on self-improvement and motivational themes. They often use unconventional hooks and bold claims to engage viewers, encouraging them to think differently about their goals and life.",
   "visual_style_suggestions": [
-    "Fast cuts and quick transitions to match the rapid pacing",
-    "Overlay text highlighting key phrases and actionable tips",
-    "Meme or sarcastic captions to emphasize humor beats",
-    "B‑roll of everyday scenes (parking lots, city streets) to reinforce relatable topics"
+    "Fast cuts matching the moderate pacing to maintain viewer engagement",
+    "Use of relatable everyday scenarios as B-roll to support the conversational tone",
+    "Incorporate futuristic or technological elements to tie into the recurring theme of advancements",
+    "Meme overlays to highlight key phrases and maintain a light-hearted, approachable vibe"
   ],
   "visual_analysis": {
     "mean_shot_count": 12.333,
     "mean_avg_shot_duration": 1.842,
     "mean_cut_frequency": 0.596,
     "visual_pacing": "very fast-paced",
-    "videos_analysed": 3
+    "videos_analysed": 3,
+    "mean_brightness": 0.2532,
+    "mean_saturation": 0.2775,
+    "accent_colour": null
   },
   "audio_analysis": {
-    "mean_speech_rate_wpm": 127.567,
+    "mean_speech_rate_wpm": 133.933,
     "speech_rate_label": "moderate",
     "mean_energy_variance": 0.008,
     "energy_label": "highly dynamic (varied energy)",
     "mean_pause_density": 0.052
   },
+  "caption_analysis": {
+    "videos_with_captions": 2,
+    "videos_checked": 3,
+    "mean_caption_frame_ratio": 0.401,
+    "y_center": 0.2857,
+    "height_ratio": 0.0666,
+    "uppercase_ratio": 0.5,
+    "chars_per_line": 4.75,
+    "boxed_ratio": 0.0,
+    "mixed_colour_ratio": 0.3915,
+    "primary_colour": "white",
+    "accent_colour": "yellow",
+    "accent_share": 0.226,
+    "box_colour": null,
+    "colour_counts": {
+      "white": 17,
+      "yellow": 7,
+      "orange": 6,
+      "blue": 1
+    }
+  },
   "per_video_profiles": [
     {
-      "video_id": "AQMZc7TkEWG3zC_CkmAC",
-      "hook_type": "Bold Claim",
+      "video_id": "01_AQMZc7TkEWG3zC_Ck",
+      "hook_type": "Contrarian",
       "tone": "Inspirational",
-      "structure": "Hook → Problem → Solution",
+      "structure": "Hook → Explanation → CTA",
       "visual_pacing": "very fast-paced",
       "shot_count": 17,
       "talking_head_pct": 0.84,
       "broll_pct": 0.16,
-      "speech_rate_wpm": 141.5,
+      "speech_rate_wpm": 141.4,
       "key_phrases": [
         "You'll never be like them",
-        "level one to someone's level hundred",
-        "Start slow, stay consistent",
+        "just starting",
         "Trust the process",
-        "Exactly where you're meant to be"
+        "doing the same mistakes"
       ],
       "errors": []
     },
     {
-      "video_id": "AQNc2gwPw_H8Gm63Wcyw",
-      "hook_type": "Story",
+      "video_id": "02_AQNc2gwPw_H8Gm63W",
+      "hook_type": "Curiosity Gap",
       "tone": "Conversational",
-      "structure": "Hook → Question → Answer",
+      "structure": "Hook → Explanation",
       "visual_pacing": "fast-paced",
       "shot_count": 8,
-      "talking_head_pct": 0.5,
-      "broll_pct": 0.5,
-      "speech_rate_wpm": 102.8,
+      "talking_head_pct": 0.5455,
+      "broll_pct": 0.4545,
+      "speech_rate_wpm": 122.1,
       "key_phrases": [
-        "I am very shy",
-        "My content is my work",
-        "But what is your knowledge in all these things?",
-        "I am just a fellow"
+        "I am very happy",
+        "my content is my work",
+        "just a fellow"
       ],
       "errors": []
     },
     {
-      "video_id": "AQOqKZdjddfM0D5GYWZq",
-      "hook_type": "Inspirational",
-      "tone": "Conversational",
+      "video_id": "03_AQOqKZdjddfM0D5GY",
+      "hook_type": "Contrarian",
+      "tone": "Inspirational",
       "structure": "Hook → Explanation",
       "visual_pacing": "very fast-paced",
       "shot_count": 12,
       "talking_head_pct": 0.75,
       "broll_pct": 0.25,
-      "speech_rate_wpm": 138.4,
+      "speech_rate_wpm": 138.3,
       "key_phrases": [
+        "non-added once",
         "We die once",
-        "We live every day",
-        "That's the reality",
-        "you are born, you begin to die",
-        "stop saying"
+        "We live every day"
       ],
       "errors": []
     }

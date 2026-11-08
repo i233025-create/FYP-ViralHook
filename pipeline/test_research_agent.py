@@ -1,13 +1,13 @@
 """
-test_research_agent.py — Standalone test for the Research Agent node.
+test_research_agent.py — Standalone live test for the Research Agent node.
 
 Run with:
-  python test_research_agent.py
+  python pipeline/test_research_agent.py
+  python pipeline/test_research_agent.py "Tech Reviews"    # override niche
 
-Tests the node in isolation without spinning up the full LangGraph pipeline.
-Prints the resulting research_output to console and saves it to a JSON file.
-
-Change TEST_NICHE below to test different niches.
+Uses the real creator_profile.json from Module 1, the real YouTube Data API
+(YOUTUBE_API_KEY) and the local LLM if Ollama is running. Prints every trend
+with its evidence and saves the full output to test_research_output.json.
 """
 
 import json
@@ -17,27 +17,31 @@ from pathlib import Path
 # Add project root to path so pipeline imports work
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from pipeline.state import PipelineState
-from pipeline.agents.research_agent import research_agent
+from pipeline.state import PipelineState  # noqa: E402
+from pipeline.agents.research_agent import research_agent  # noqa: E402
 
 # ─── Test Configuration ────────────────────────────────────────────────────────
-TEST_NICHE = "Personal Growth"   # Change this to test different niches
+PROFILE_PATH = Path(__file__).parent.parent / "module1_style_extraction" / "creator_profile.json"
 TEST_CREATOR_ID = "test_creator_001"
 
 
-def run_test():
+def run_test(niche: str | None = None):
+    profile = {}
+    if PROFILE_PATH.exists():
+        profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    niche = niche or profile.get("creator_niche", "Personal Growth")
+
     print("=" * 60)
     print("  Research Agent — Standalone Test")
     print("=" * 60)
-    print(f"  Niche:      {TEST_NICHE}")
-    print(f"  Creator ID: {TEST_CREATOR_ID}")
+    print(f"  Niche:   {niche}")
+    print(f"  Profile: {'loaded' if profile else 'NOT FOUND — fallback queries only'}")
     print("=" * 60)
 
-    # Build a minimal PipelineState — only fields the research agent reads
     test_state: PipelineState = {
         "creator_id": TEST_CREATOR_ID,
-        "creator_niche": TEST_NICHE,
-        "creator_profile": {},   # Empty for this test — research agent doesn't use it
+        "creator_niche": niche,
+        "creator_profile": profile,
         "research_output": None,
         "research_error": None,
         "scripting_output": None,
@@ -46,51 +50,41 @@ def run_test():
         "visual_error": None,
     }
 
-    # Run the node directly
     result = research_agent(test_state)
+    output = result["research_output"]
 
     print("\n" + "=" * 60)
-    print("  Result")
-    print("=" * 60)
-
     if result.get("research_error"):
-        print(f"\n  ⚠ Error/Warning: {result['research_error']}")
-        if result.get("research_output", {}).get("fallback"):
-            print("  ℹ Fallback topic was used (Google Trends unavailable)")
+        print(f"  ⚠ Error: {result['research_error']}")
+    print(f"  Source:  {output['source']}")
+    print(f"  Queries: {output['related_keywords']}")
 
-    if result.get("research_output"):
-        output = result["research_output"]
-        print(f"\n  ✓ Topic:       {output['topic']}")
-        print(f"  ✓ Niche:       {output['niche']}")
-        print(f"  ✓ Trend Score: {output['trend_score']}")
-        print(f"  ✓ Cluster Size:{output.get('cluster_size', 'N/A')}")
-        print(f"  ✓ Confidence:  {'⚠ LOW (single-video cluster)' if output.get('low_confidence') else '✓ OK (multi-video cluster)'}")
-        print(f"  ✓ Velocity:    {output['trend_signals']['velocity']}")
-        print(f"  ✓ Engagement:  {output['trend_signals']['engagement_rate']}")
-        print(f"\n  Related Keywords:")
-        for kw in output.get("related_keywords", []):
-            print(f"    - {kw}")
-        print(f"\n  Supporting Evidence (top trending videos):")
-        for ev in output.get("supporting_evidence", []):
-            print(f"    - \"{ev.get('video_title', ev.get('keyword', 'N/A'))}\"")
-            print(f"      Channel: {ev.get('channel', 'N/A')} | "
-                  f"Views: {ev.get('views', ev.get('peak_interest', 'N/A'))} | "
-                  f"Published: {ev.get('published_hours_ago', 'N/A')}h ago")
+    for i, trend in enumerate(output.get("trends", []), 1):
+        print(f"\n  #{i} {trend['topic']}"
+              f"{'   ⚠ low confidence' if trend['low_confidence'] else ''}")
+        print(f"     trend={trend['trend_score']:.2f}  fit={trend['creator_fit']:.2f}  "
+              f"videos={trend['video_count']}  channels={trend['channel_count']}  "
+              f"label={trend['labeled_by']}")
+        print(f"     {trend['data_summary']}")
+        if trend["why_trending"]:
+            print(f"     Why:   {trend['why_trending']}")
+        if trend["suggested_angle"]:
+            print(f"     Angle: {trend['suggested_angle']}")
+        for e in trend["evidence"]:
+            reuploads = f" | +{e['reuploads']} reuploads" if e.get("reuploads") else ""
+            print(f"       - {e['title'][:60]} | {e['channel']} | {e['views']:,} views "
+                  f"| {e['outlier']:.1f}× subs{reuploads} | {e['url']}")
 
-        # Save full output to file for inspection
-        output_path = Path(__file__).parent / "test_research_output.json"
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
-        print(f"\n  Full output saved to: {output_path}")
-    else:
-        print("\n  ✗ No research_output returned")
+    if not output.get("trends"):
+        print(f"\n  Fallback topic: {output['topic']}")
 
-    print("\n" + "=" * 60)
+    output_path = Path(__file__).parent / "test_research_output.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, ensure_ascii=False)
+    print(f"\n  Full output saved to: {output_path}")
+    print("=" * 60)
     return result
 
 
 if __name__ == "__main__":
-    # Allow overriding niche from command line: python test_research_agent.py "Tech Reviews"
-    if len(sys.argv) > 1:
-        TEST_NICHE = " ".join(sys.argv[1:])
-    run_test()
+    run_test(" ".join(sys.argv[1:]) or None)

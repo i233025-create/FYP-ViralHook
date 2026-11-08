@@ -13,7 +13,8 @@ pytrends==4.9.2                 # Unofficial Google Trends API wrapper (no key n
 
 # ─── Data Processing ──────────────────────────────────────────────────────────
 pandas==2.2.2                   # Required by pytrends for response parsing
-scikit-learn==1.4.2             # TF-IDF for topic clustering (already in module1 venv)
+scikit-learn==1.4.2             # AgglomerativeClustering for research topic clusters
+sentence-transformers==2.7.0    # all-MiniLM-L6-v2 embeddings (already in module1 venv)
 
 # ─── Pydantic v2 ──────────────────────────────────────────────────────────────
 pydantic==2.7.1                 # Typed state models — v2 required

@@ -26,3 +26,4 @@ qdrant-client==1.9.1            # Qdrant in-memory, named vectors
 # sentence-transformers
 # python-dotenv
 # rich
+rapidocr-onnxruntime==1.4.4     # OCR of creator captions (caption_analyzer.py)

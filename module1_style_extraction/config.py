@@ -29,13 +29,17 @@ WHISPER_MODEL: str = "tiny"
 # Language for Whisper transcription.
 # None = auto-detect
 # "ur" = Urdu, "en" = English, "hi" = Hindi
-WHISPER_LANGUAGE: str = None  # Auto-detect is fine now that we clean output
+# Experiment E1 (experiments/rag_e1/REPORT.md): auto-detect labels Pakistani
+# Urdu–English speech as Hindi and writes Devanagari; forcing "en" gives clean
+# English text, is 3–8× faster, and retrieval on it is far better (R@3 ~94% vs
+# ~60% on Urdu script). The spoken language is still detected and stored.
+WHISPER_LANGUAGE: str = "en"
 
 # Whisper task mode.
-# "transcribe" = output in the original spoken language
+# "transcribe" = output in the given language (English, with WHISPER_LANGUAGE="en")
 # "translate"  = output in English regardless of input language
-# Use "translate" for non-English creators so the LLM gets clean English text.
-WHISPER_TASK: str = "translate"
+# E1 used "transcribe" with language="en"; keep the two together.
+WHISPER_TASK: str = "transcribe"
 
 # Sentence-Transformers model for generating text embeddings.
 # "all-MiniLM-L6-v2" is a compact (~90 MB) but high-quality model that

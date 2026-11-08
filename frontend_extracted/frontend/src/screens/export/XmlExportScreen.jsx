@@ -19,17 +19,24 @@ export default function XmlExportScreen() {
   const [phase, setPhase] = useState('idle')  // idle | generating | done
   const [step, setStep] = useState(-1)
   const [xml, setXml] = useState(null)
+  const [error, setError] = useState('')
 
   const startExport = async () => {
     setPhase('generating')
     setStep(0)
-    const { xml: x } = await exportXML({
-      plan: productionPlan,
-      onStep: (s) => setStep(s.id - 1),
-    })
-    setXml(x)
-    setExportXML(x)
-    setPhase('done')
+    setError('')
+    try {
+      const { xml: x } = await exportXML({
+        plan: productionPlan,
+        onStep: (s) => setStep(s.id - 1),
+      })
+      setXml(x)
+      setExportXML(x)
+      setPhase('done')
+    } catch (err) {
+      setError(err?.message || 'XML export failed. Check that the backend is running.')
+      setPhase('idle')
+    }
   }
 
   const downloadXML = () => {
@@ -48,6 +55,8 @@ export default function XmlExportScreen() {
     <Page>
       <div className="max-w-xl mx-auto">
         <SectionHeader icon={FileCode} title="XML Export" subtitle="Export your production plan as an Adobe Premiere Pro project." />
+
+        {error && <Alert type="error">{error}</Alert>}
 
         {/* Plan summary */}
         {phase === 'idle' && (

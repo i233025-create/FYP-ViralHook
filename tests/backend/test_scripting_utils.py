@@ -133,43 +133,51 @@ class TestExtractStyleParams:
 
 class TestScriptToVariant:
 
-    def test_variant_a_label(self):
-        script = {
-            "concept_name": "Test Script",
-            "hook_type": "Contrarian",
-            "scenes": [],
-        }
-        result = _script_to_variant(script, "no_history", "Test Topic", None, False)
-        assert result["label"] == "VARIANT A"
+    META = {
+        "mode": "full_pipeline",
+        "structure": "Hook → Explanation",
+        "regen_triggered": False,
+        "evaluator_scores": {
+            "style_match": 8.0, "timing": 10.0, "structure": 6.0,
+            "hook_strength": 7.5, "overall": 7.88, "feedback": ["Cut 10 words."],
+        },
+    }
 
-    def test_variant_b_label(self):
-        script = {"concept_name": "Test", "hook_type": "Bold Claim", "scenes": []}
-        result = _script_to_variant(script, "retrieval_only", "Test Topic", None, False)
-        assert result["label"] == "VARIANT B"
+    def test_labels_follow_variant_index(self):
+        script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
+        labels = [_script_to_variant(script, self.META, "T", i)["label"] for i in range(3)]
+        assert labels == ["VARIANT A", "VARIANT B", "VARIANT C"]
 
-    def test_variant_c_label(self):
-        script = {"concept_name": "Test", "hook_type": "Story", "scenes": []}
-        result = _script_to_variant(script, "full_pipeline", "Test Topic", None, False)
-        assert result["label"] == "VARIANT C"
+    def test_scores_are_evaluator_scores_times_ten(self):
+        script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
+        result = _script_to_variant(script, self.META, "Test", 0)
+        assert result["styleConsistency"] == 80
+        assert result["timingFit"] == 100
+        assert result["structureAlignment"] == 60
+        assert result["hookAlignment"] == 75
+        assert result["overall"] == 79
+        assert result["feedback"] == ["Cut 10 words."]
+
+    def test_unmeasured_metric_stays_none(self):
+        script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
+        meta = {**self.META, "evaluator_scores": {**self.META["evaluator_scores"], "style_match": None}}
+        assert _script_to_variant(script, meta, "Test", 0)["styleConsistency"] is None
+
+    def test_no_invented_scores_without_evaluation(self):
+        script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
+        result = _script_to_variant(script, {}, "Test", 0)
+        assert result["overall"] is None and result["styleConsistency"] is None
 
     def test_scores_clamped_0_to_100(self):
         script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
-        eval_scores = {
-            "style_match": 999, "hook_strength": -5,
-            "structure_adherence": 7, "overall": 5,
-        }
-        result = _script_to_variant(script, "no_history", "Test", eval_scores, False)
-        assert 0 <= result["styleConsistency"]   <= 100
-        assert 0 <= result["hookAlignment"]      <= 100
-        assert 0 <= result["structureAlignment"] <= 100
-        assert 0 <= result["overall"]            <= 100
+        meta = {"evaluator_scores": {"style_match": 999, "hook_strength": -5,
+                                     "structure": 7, "timing": 5, "overall": 5}}
+        result = _script_to_variant(script, meta, "Test", 0)
+        for key in ("styleConsistency", "hookAlignment", "structureAlignment", "timingFit", "overall"):
+            assert 0 <= result[key] <= 100
 
-    def test_topic_preserved(self):
+    def test_topic_and_regen_flag_preserved(self):
         script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
-        result = _script_to_variant(script, "no_history", "My Topic", None, False)
+        result = _script_to_variant(script, {**self.META, "regen_triggered": True}, "My Topic", 0)
         assert result["topic"] == "My Topic"
-
-    def test_regen_flag_preserved(self):
-        script = {"concept_name": "Test", "hook_type": "Contrarian", "scenes": []}
-        result = _script_to_variant(script, "full_pipeline", "Topic", None, True)
         assert result["regenTriggered"] is True

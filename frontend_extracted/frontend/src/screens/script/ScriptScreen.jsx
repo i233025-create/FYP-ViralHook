@@ -39,6 +39,13 @@ export default function ScriptScreen() {
     try {
       const { failed, variants: v } = await generateScripts({
         topic: selectedTopic?.topic,
+        // Research card → scripting context (why it trends, angle, real evidence).
+        // Own ideas have no research behind them, so no trend is sent.
+        trend: selectedTopic?.evidence ? {
+          why_trending: selectedTopic.signals?.[0] || '',
+          suggested_angle: selectedTopic.whyThis || '',
+          evidence: selectedTopic.evidence,
+        } : null,
         creatorProfile: creatorProfile,
         forceFail: forceFail,
         onStep: (s) => setStep(s.id - 1),
@@ -270,6 +277,7 @@ function VariantCard({ variant: v, selected, onSelect, onEdit }) {
           <ScoreBar label="Style Consistency" value={v.styleConsistency} />
           <ScoreBar label="Hook Alignment"    value={v.hookAlignment} />
           <ScoreBar label="Structure Align."  value={v.structureAlignment} />
+          {v.timingFit !== undefined && <ScoreBar label="Timing Fit" value={v.timingFit} />}
         </div>
 
         {/* Expand toggle */}

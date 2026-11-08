@@ -73,7 +73,9 @@ export function Badge({ children, color = 'blurple', size = 'sm' }) {
 
 // ── Score bar ─────────────────────────────────────────────────────────────────
 export function ScoreBar({ label, value, max = 100 }) {
-  const pct = Math.min(100, Math.round((value / max) * 100))
+  // null = metric could not be measured (e.g. no creator transcripts yet)
+  const measured = value !== null && value !== undefined
+  const pct = measured ? Math.min(100, Math.round((value / max) * 100)) : 0
   const color = pct >= 85 ? 'bg-discord-green' : pct >= 65 ? 'bg-discord-yellow' : 'bg-discord-red'
   return (
     <div className="flex items-center gap-3">
@@ -81,7 +83,7 @@ export function ScoreBar({ label, value, max = 100 }) {
       <div className="flex-1 h-1.5 bg-discord-faint/30 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-discord-white text-xs font-bold w-8 text-right">{value}%</span>
+      <span className="text-discord-white text-xs font-bold w-8 text-right">{measured ? `${value}%` : 'n/a'}</span>
     </div>
   )
 }

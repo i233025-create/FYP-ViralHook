@@ -1,9 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // VIRALHOOK — API SERVICE LAYER
 //
-// Flip USE_REAL_BACKEND to true to route the three implemented
-// pipeline endpoints to the FastAPI server (uvicorn server:app --port 8000).
-// Everything else (auth, onboarding, AI video, publishing) stays mocked.
+// Real backend (FastAPI, uvicorn server:app --port 8000) is the default for
+// onboarding profile, research, scripting, XML export and AI video.
+// Auth, new-creator onboarding and publishing stay mocked (no backend yet).
+//
+// Override in frontend/.env.local:
+//   VITE_USE_REAL_BACKEND=false        → whole UI on mock data (offline demo)
+//   VITE_API_BASE=http://host:8000     → backend on another machine
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
@@ -22,12 +26,11 @@ import {
 } from '../data/mockData'
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+const PROFILE_POLL_MS = 2000
 
 // ── Backend switch ─────────────────────────────────────────────────────────
-// Set USE_REAL_BACKEND = true to route research, scripting, and XML export
-// to the FastAPI server. Run: uvicorn server:app --reload --port 8000
-const USE_REAL_BACKEND = false
-const API_BASE = 'http://localhost:8000'
+export const USE_REAL_BACKEND = import.meta.env.VITE_USE_REAL_BACKEND !== 'false'
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
 async function apiFetch(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -82,37 +85,60 @@ export async function createNewCreatorProfile(formData) {
 }
 
 /**
- * POST /onboarding/process-videos
- * Runs mock processing steps (video upload/transcription is CLI-based in PoC),
- * then fetches the REAL creator profile from creator_profile.json via the backend.
- * Falls back to mock profile if the backend has no profile yet.
+ * POST /onboarding/upload (videos + handle + niche) → poll GET /onboarding/status/{jobId}
+ * → GET /onboarding/profile. The backend saves the videos as the new creator,
+ * runs Module 1 (text RAG) + Module 2 (multimodal) and builds the REAL profile.
+ * onStep({ id, label, detail }) fires on every progress change.
  */
-export async function processCreatorVideos({ handle, niche, onStep }) {
+export async function processCreatorVideos({ files = [], handle, niche, onStep }) {
+  if (USE_REAL_BACKEND) {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f, f.name))
+    form.append('handle', handle || '')
+    form.append('niche', niche || '')
+
+    let res
+    try {
+      res = await fetch(`${API_BASE}/onboarding/upload`, { method: 'POST', body: form })
+    } catch (_) {
+      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Upload failed (${res.status})`)
+    }
+    const { jobId } = await res.json()
+
+    for (;;) {
+      await delay(PROFILE_POLL_MS)
+      const r = await fetch(`${API_BASE}/onboarding/status/${jobId}`)
+      if (!r.ok) throw new Error(`Profile status error ${r.status}`)
+      const job = await r.json()
+      if (onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
+      if (job.status === 'error') throw new Error(job.error || 'Profile extraction failed')
+      if (job.status === 'done') break
+    }
+
+    const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
+    const p = await fetch(`${API_BASE}/onboarding/profile?${params}`)
+    if (!p.ok) {
+      const err = await p.json().catch(() => ({}))
+      throw new Error(err.detail || `Profile request failed (${p.status})`)
+    }
+    return { profile: (await p.json()).profile }
+  }
+
   const steps = [
     { id: 1, label: 'Uploading videos', duration: 1200 },
-    { id: 2, label: 'Extracting transcripts', duration: 1500 },
+    { id: 2, label: 'Transcribing & extracting text style (Module 1)', duration: 1500 },
     { id: 3, label: 'Building creator knowledge base', duration: 1800 },
-    { id: 4, label: 'Analysing creator style patterns', duration: 2000 },
+    { id: 4, label: 'Visual & audio analysis (Module 2)', duration: 2000 },
     { id: 5, label: 'Generating creator profile', duration: 1200 },
   ]
   for (const step of steps) {
     await delay(step.duration)
     onStep(step)
   }
-
-  if (USE_REAL_BACKEND) {
-    try {
-      const params = new URLSearchParams({ handle: handle || '', niche: niche || '' })
-      const res = await fetch(`${API_BASE}/onboarding/profile?${params}`)
-      if (res.ok) {
-        const data = await res.json()
-        return { profile: data.profile }
-      }
-    } catch (_) {
-      // Backend unreachable — fall through to mock
-    }
-  }
-
   return { profile: MOCK_EXPERIENCED_CREATOR_PROFILE(handle, niche) }
 }
 
@@ -154,7 +180,7 @@ export async function fetchTrendingTopics({ niche, onStep }) {
  * POST /script/generate
  * Returns: { variants } | { failed: true, variants }
  */
-export async function generateScripts({ topic, creatorProfile, forceFail = false, onStep }) {
+export async function generateScripts({ topic, trend = null, creatorProfile, forceFail = false, onStep }) {
   const steps = [
     { id: 1, label: 'Retrieving creator context' },
     { id: 2, label: 'Generating script variants' },
@@ -169,7 +195,7 @@ export async function generateScripts({ topic, creatorProfile, forceFail = false
       if (onStep) onStep(steps[i])
       await delay(400)
     }
-    const data = await apiFetch('/script/generate', { topic, niche: creatorProfile?.niche || 'Tech' })
+    const data = await apiFetch('/script/generate', { topic, trend, niche: creatorProfile?.niche || 'Tech' })
     if (onStep) onStep(steps[steps.length - 1])
     return data  // { failed: false, variants: [...] }
   }
@@ -242,22 +268,96 @@ export async function exportXML({ plan, onStep }) {
 
 // ── AI Video Generation ───────────────────────────────────────────────────────
 
+// Same order as pipeline/agents/video_agent.py STEPS
+export const VIDEO_STEPS = [
+  { id: 1, label: 'Planning edit style' },
+  { id: 2, label: 'Generating voiceover' },
+  { id: 3, label: 'Planning shots' },
+  { id: 4, label: 'Fetching visual assets' },
+  { id: 5, label: 'Building timeline' },
+  { id: 6, label: 'Rendering video' },
+  { id: 7, label: 'Evaluating video' },
+]
+const VIDEO_POLL_MS = 1500
+
 /**
- * POST /video/generate
- * Returns: { timeline }
+ * POST /video/generate → poll GET /video/status/{jobId}
+ * onStep({ id, label, detail }) fires on every progress change.
+ * Returns: { timeline, videoUrl, evaluation, mode }   (videoUrl null when mocked)
  */
-export async function generateAIVideo({ plan, onStep }) {
-  const steps = [
-    { id: 1, label: 'Processing production plan', done: true },
-    { id: 2, label: 'Generating visual assets', done: true },
-    { id: 3, label: 'Building JSON timeline', done: true },
-    { id: 4, label: 'Rendering video' },
-  ]
-  for (const step of steps) {
-    await delay(step.done ? 500 : 2000)
+export async function generateAIVideo({ plan, mode = 'personalised', assetLibraryId = null, sceneAssets = null, onStep }) {
+  if (USE_REAL_BACKEND) {
+    const { jobId } = await apiFetch('/video/generate', { plan, mode, assetLibraryId, sceneAssets })
+    for (;;) {
+      await delay(VIDEO_POLL_MS)
+      const res = await fetch(`${API_BASE}/video/status/${jobId}`)
+      if (!res.ok) throw new Error(`Video status error ${res.status}`)
+      const job = await res.json()
+      if (job.step && onStep) onStep({ id: job.step, label: job.stepLabel, detail: job.detail })
+      if (job.status === 'error') throw new Error(job.error || 'Video generation failed')
+      if (job.status === 'done') {
+        return {
+          timeline: MOCK_VIDEO_TIMELINE(job.timeline),   // adds thumbnailBg colours
+          videoUrl: `${API_BASE}${job.videoUrl}`,
+          evaluation: job.evaluation,
+          mode: job.mode,
+        }
+      }
+    }
+  }
+
+  for (const step of VIDEO_STEPS) {
+    await delay(step.id === 6 ? 1500 : 400)
     if (onStep) onStep(step)
   }
-  return { timeline: MOCK_VIDEO_TIMELINE(plan?.scenes) }
+  return { timeline: MOCK_VIDEO_TIMELINE(plan?.scenes), videoUrl: null, evaluation: null, mode }
+}
+
+// ── Creator photos (experiment E3: SigLIP match → creator review) ─────────────
+
+/** Backend photo URLs are relative; blob: URLs (mock mode) are used as-is. */
+export const photoUrl = (url) => (!url || url.startsWith('blob:') ? url : `${API_BASE}${url}`)
+
+/**
+ * POST /assets/upload (multipart files[]) → { libraryId, photos: [{ name, url }] }
+ */
+export async function uploadCreatorPhotos(files) {
+  if (USE_REAL_BACKEND) {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f, f.name))
+    let res
+    try {
+      res = await fetch(`${API_BASE}/assets/upload`, { method: 'POST', body: form })
+    } catch (_) {
+      throw new Error(`Backend not reachable at ${API_BASE}. Start it with: uvicorn server:app --port 8000`)
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `Upload failed (${res.status})`)
+    }
+    return res.json()
+  }
+  await delay(500)
+  return { libraryId: 'mock', photos: files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })) }
+}
+
+/**
+ * POST /assets/match { libraryId, plan }
+ * → { threshold, photos, scenes: [{ index, segment, clipIdea, ranked: [{ name, score }], suggested }] }
+ * `suggested` is the best photo above the threshold (null → stock / generated);
+ * the creator confirms or swaps it before rendering.
+ */
+export async function matchCreatorPhotos({ libraryId, plan, photos = [] }) {
+  if (USE_REAL_BACKEND) return apiFetch('/assets/match', { libraryId, plan })
+  await delay(600)
+  return {
+    threshold: 0.064,
+    photos,
+    scenes: (plan?.scenes || []).map((sc, index) => ({
+      index, segment: sc.segment, clipIdea: sc.visual || sc.clip_idea || '',
+      ranked: photos.map((p) => ({ name: p.name, score: null })), suggested: null,
+    })),
+  }
 }
 
 /**

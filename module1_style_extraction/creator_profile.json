@@ -1,26 +1,25 @@
 {
-  "creator_niche": "Motivational self‑improvement and personal growth with everyday life commentary",
+  "creator_niche": "Personal Growth & Motivational Content",
   "signature_hooks": [
     "Contrarian",
     "Bold Claim",
     "Curiosity Gap"
   ],
   "dominant_tone": "Inspirational",
-  "avg_pacing": "Fast-paced",
-  "typical_structure": "Hook → Explanation",
-  "target_audience": "Young adults (18‑35) seeking motivation, personal growth, and relatable everyday life content",
+  "avg_pacing": "Moderate",
+  "typical_structure": "Hook → Explanation → CTA",
+  "target_audience": "Individuals seeking motivation and personal growth, likely in the early to mid stages of their journey",
   "recurring_topics": [
-    "Personal growth & self‑comparison",
-    "Mortality & living fully",
-    "Daily life frustrations",
-    "Consistency & process",
-    "Motivational advice"
+    "Comparison and Progress",
+    "Life and Mortality",
+    "Technology and Its Impact",
+    "Consistency and Persistence"
   ],
-  "content_style_summary": "The creator blends motivational messaging with quick, punchy hooks that challenge conventional thinking. They use a mix of inspirational and sarcastic tones, delivering content in a fast‑paced format that keeps viewers engaged. Their videos often start with a provocative hook, followed by a concise explanation or solution, and end with a relatable takeaway. The voice is candid, direct, and occasionally humorous, making complex ideas accessible and memorable.",
+  "content_style_summary": "The creator's content is characterized by an inspirational and conversational tone, focusing on personal growth and motivation. They often use hooks that challenge common beliefs, make bold claims, or create a sense of curiosity. The content is structured to engage the audience with explanations and calls to action, making it accessible yet thought-provoking.",
   "visual_style_suggestions": [
-    "Fast cuts and quick transitions to match the fast pacing",
-    "On‑screen text overlays highlighting key phrases for emphasis",
-    "Bright, energetic color palette to reinforce inspirational tone",
-    "Meme or sarcastic graphics inserted during humor beats for added relatability"
+    "Use a mix of close-up shots and B-roll to emphasize personal stories and progress.",
+    "Incorporate subtle animations to highlight key phrases and concepts.",
+    "Utilize a clean, modern aesthetic with text overlays to support the inspirational tone.",
+    "Consider using transitions that reflect the moderate pacing, such as smooth cuts and fades."
   ]
 }
