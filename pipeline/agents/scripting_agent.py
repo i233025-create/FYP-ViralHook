@@ -64,6 +64,7 @@ sys.path.insert(0, str(ROOT))
 from pipeline.state import PipelineState, ScriptingOutput, ScriptOutput, SceneOutput  # noqa: E402
 from pipeline.local_llm import LocalLLMError, chat_json  # noqa: E402
 from pipeline.embeddings import embed_for_retrieval  # noqa: E402
+from pipeline.creator_paths import CreatorPaths  # noqa: E402
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 CHROMA_PERSIST_DIR = ROOT / "module1_style_extraction" / "chroma_db"
@@ -115,11 +116,12 @@ YOU_WORDS = {"you", "your", "you're", "youre", "yours", "yourself", "yourselves"
 
 # ─── [1] Creator Context ───────────────────────────────────────────────────────
 
-def _load_creator_profile() -> dict:
+def _load_creator_profile(paths: CreatorPaths | None = None) -> dict:
     """Load creator_profile.json from Module 1 ({} if missing)."""
-    if not CREATOR_PROFILE_PATH.exists():
+    path = paths.text_profile if paths else CREATOR_PROFILE_PATH
+    if not path.exists():
         return {}
-    with open(CREATOR_PROFILE_PATH, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -133,18 +135,20 @@ def _json_list(value: Any) -> list:
         return []
 
 
-def load_creator_examples() -> list[dict]:
+def load_creator_examples(paths: CreatorPaths | None = None) -> list[dict]:
     """
     Past videos with their real transcripts from Module 1's ChromaDB.
     Returns [] if ChromaDB is missing or was built before transcripts
-    were stored (re-run Module 1 to fix).
+    were stored (re-run Module 1 to fix). `paths`: the creator's workspace
+    (default: the single-creator layout in the repo).
     """
-    if not CHROMA_PERSIST_DIR.exists():
-        print(f"[ScriptingAgent] ChromaDB not found at {CHROMA_PERSIST_DIR} — run Module 1")
+    chroma_dir = paths.chroma_db if paths else CHROMA_PERSIST_DIR
+    if not chroma_dir.exists():
+        print(f"[ScriptingAgent] ChromaDB not found at {chroma_dir} — run Module 1")
         return []
     try:
         import chromadb
-        client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+        client = chromadb.PersistentClient(path=str(chroma_dir))
         metadatas = client.get_collection(COLLECTION_NAME).get(include=["metadatas"])["metadatas"]
     except Exception as e:
         print(f"[ScriptingAgent] ChromaDB read failed: {e}")
@@ -167,12 +171,13 @@ def load_creator_examples() -> list[dict]:
     return examples
 
 
-def load_multimodal_stats() -> dict:
+def load_multimodal_stats(paths: CreatorPaths | None = None) -> dict:
     """Median speech rate and visual style across Module 2's analysed videos."""
-    if not QDRANT_SNAPSHOT_PATH.exists():
+    snapshot = paths.qdrant_snapshot if paths else QDRANT_SNAPSHOT_PATH
+    if not snapshot.exists():
         return {}
     try:
-        with open(QDRANT_SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+        with open(snapshot, "r", encoding="utf-8") as f:
             payloads = [p.get("payload") or {} for p in json.load(f).get("points", [])]
     except (OSError, ValueError):
         return {}
@@ -241,17 +246,18 @@ def usable_for_style(example: dict) -> bool:
             and (not language or language == STYLE_LANGUAGE))
 
 
-def prepare_context(profile: dict | None = None) -> dict:
-    """Load everything the scripting modes need, once per request."""
-    profile = profile or _load_creator_profile()
-    all_examples = load_creator_examples()
+def prepare_context(profile: dict | None = None, paths: CreatorPaths | None = None) -> dict:
+    """Load everything the scripting modes need, once per request (from `paths`, the
+    creator's workspace, or the single-creator layout when None)."""
+    profile = profile or _load_creator_profile(paths)
+    all_examples = load_creator_examples(paths)
     examples = [e for e in all_examples if usable_for_style(e)]
     # Retrieval searches every transcript long enough to carry a topic, whatever
     # language was spoken: Module 1 stores English text for all of them (Whisper
     # language="en"), and E1 showed retrieval works on these (R@3 94% for the
     # Urdu–English creators). The style baseline above stays spoken-English only.
     retrieval_pool = [e for e in all_examples if len(_words(e["transcript"])) >= MIN_TRANSCRIPT_WORDS]
-    baseline = build_style_baseline(examples, load_multimodal_stats())
+    baseline = build_style_baseline(examples, load_multimodal_stats(paths))
     baseline["transcripts_excluded"] = len(all_examples) - len(examples)
     print(f"[ScriptingAgent] Context: {len(examples)} usable transcripts "
           f"({baseline['transcripts_excluded']} excluded: non-English or too short), "
@@ -795,14 +801,14 @@ def variant_hooks(profile: dict, n: int = 3) -> list[str]:
 
 
 def generate_variants(topic: str, trend: dict | None = None, profile: dict | None = None,
-                      n: int = 3) -> list[tuple[ScriptOutput, dict]]:
+                      n: int = 3, paths: CreatorPaths | None = None) -> list[tuple[ScriptOutput, dict]]:
     """
     Product path: full pipeline once per signature hook → n distinct variants.
 
     Raises:
         LocalLLMError: if every variant failed.
     """
-    context = prepare_context(profile)
+    context = prepare_context(profile, paths)
     examples = retrieve_examples(context["retrieval_pool"], topic)
     results, errors = [], []
     for i, hook in enumerate(variant_hooks(context["profile"], n), 1):
@@ -817,9 +823,10 @@ def generate_variants(topic: str, trend: dict | None = None, profile: dict | Non
 
 
 def run_ablation(topic: str, trend: dict | None = None, profile: dict | None = None,
-                 hook_type: str | None = None) -> dict[str, tuple[ScriptOutput, dict]]:
+                 hook_type: str | None = None,
+                 paths: CreatorPaths | None = None) -> dict[str, tuple[ScriptOutput, dict]]:
     """Research path: the same topic/hook through all three modes, same evaluator."""
-    context = prepare_context(profile)
+    context = prepare_context(profile, paths)
     examples = retrieve_examples(context["retrieval_pool"], topic)
     hook = hook_type or _extract_style_params(context["profile"])["hook_type"]
     return {mode: run_mode(mode, topic, context, examples, hook, trend) for mode in MODES}

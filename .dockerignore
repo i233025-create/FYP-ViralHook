@@ -49,3 +49,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Product data (database, per-user workspaces) is mounted as a volume, never baked in
+data/

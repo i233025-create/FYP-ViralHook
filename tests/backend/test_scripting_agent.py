@@ -150,8 +150,8 @@ def test_prepare_context_searches_translated_transcripts(monkeypatch):
     rows = [{"topic": "a", "transcript": words, "language": "en"},
             {"topic": "b", "transcript": words, "language": "hi"},
             {"topic": "c", "transcript": "too short", "language": "en"}]
-    monkeypatch.setattr(sa, "load_creator_examples", lambda: rows)
-    monkeypatch.setattr(sa, "load_multimodal_stats", lambda: {})
+    monkeypatch.setattr(sa, "load_creator_examples", lambda paths=None: rows)
+    monkeypatch.setattr(sa, "load_multimodal_stats", lambda paths=None: {})
     context = sa.prepare_context({"creator_niche": "x"})
     assert [e["topic"] for e in context["examples"]] == ["a"]              # style: spoken English
     assert [e["topic"] for e in context["retrieval_pool"]] == ["a", "b"]   # retrieval: any language
@@ -431,7 +431,7 @@ def test_unknown_signature_hooks_are_ignored():
 
 
 def test_generate_variants_skips_failed_variant(monkeypatch, context):
-    monkeypatch.setattr(sa, "prepare_context", lambda profile=None: context)
+    monkeypatch.setattr(sa, "prepare_context", lambda profile=None, paths=None: context)
     calls = {"n": 0}
 
     def flaky(prompt, **kwargs):
@@ -449,7 +449,7 @@ def test_generate_variants_skips_failed_variant(monkeypatch, context):
 
 
 def test_generate_variants_raises_when_all_fail(monkeypatch, context):
-    monkeypatch.setattr(sa, "prepare_context", lambda profile=None: context)
+    monkeypatch.setattr(sa, "prepare_context", lambda profile=None, paths=None: context)
     monkeypatch.setattr(sa, "chat_json", FakeLLM([LocalLLMError("offline")]))
     with pytest.raises(LocalLLMError):
         sa.generate_variants("Discipline")
@@ -461,14 +461,14 @@ def test_node_requires_topic():
 
 
 def test_node_reports_llm_failure_without_crashing(monkeypatch, context):
-    monkeypatch.setattr(sa, "prepare_context", lambda profile=None: context)
+    monkeypatch.setattr(sa, "prepare_context", lambda profile=None, paths=None: context)
     monkeypatch.setattr(sa, "chat_json", FakeLLM([LocalLLMError("offline")]))
     out = sa.scripting_agent({"research_output": {"topic": "Discipline"}})
     assert out["scripting_output"] is None and "offline" in out["scripting_error"]
 
 
 def test_node_returns_variants_and_best_final(monkeypatch, context):
-    monkeypatch.setattr(sa, "prepare_context", lambda profile=None: context)
+    monkeypatch.setattr(sa, "prepare_context", lambda profile=None, paths=None: context)
     monkeypatch.setattr(sa, "chat_json", FakeLLM([_scenes()]))
     out = sa.scripting_agent({"research_output": {"topic": "Discipline"}})
     assert len(out["scripting_output"].scripts) == 3

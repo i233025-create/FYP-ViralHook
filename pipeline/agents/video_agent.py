@@ -82,10 +82,12 @@ STEPS = [
 StepCallback = Callable[[int, str, str], None]   # (step 1-7, label, detail)
 
 
-def load_profile() -> dict:
-    """Multimodal profile (has measured visual/audio stats) over the text-only one."""
+def load_profile(paths=None) -> dict:
+    """Multimodal profile (has measured visual/audio stats) over the text-only one.
+    `paths`: the creator's CreatorPaths (default: the single-creator repo layout)."""
     profile = {}
-    for path in (TEXT_PROFILE, MULTIMODAL_PROFILE):
+    sources = (paths.text_profile, paths.multimodal_profile) if paths else (TEXT_PROFILE, MULTIMODAL_PROFILE)
+    for path in sources:
         if path.exists():
             profile.update(json.loads(path.read_text(encoding="utf-8")))
     return profile

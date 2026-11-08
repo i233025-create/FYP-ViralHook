@@ -46,8 +46,12 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 console = Console()
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-INPUT_VIDEOS_DIR     = _WORKSPACE_ROOT / "module1_style_extraction" / "input_videos"
-OUTPUT_PROFILE_PATH  = _MODULE2_DIR / "creator_profile_multimodal.json"
+# One user's folder when the server sets VIRALHOOK_WORKSPACE (pipeline/creator_paths.py)
+from pipeline.creator_paths import CreatorPaths  # noqa: E402
+
+_PATHS               = CreatorPaths.from_env()
+INPUT_VIDEOS_DIR     = _PATHS.input_videos
+OUTPUT_PROFILE_PATH  = _PATHS.multimodal_profile
 ALLOWED_EXTENSIONS   = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 WHISPER_MODEL        = "base"
 
@@ -148,7 +152,7 @@ def main():
     # ── Save Qdrant snapshot for scripting agent to reload ─────────────────────
     # Scripting agent reads this file to load multimodal retrieval context
     from module2_multimodal_rag.qdrant_store import get_all_profiles
-    snapshot_path = _MODULE2_DIR / "qdrant_snapshot.json"
+    snapshot_path = _PATHS.qdrant_snapshot
     snapshot_points = []
     for r in all_results:
         if r.get("text_vector") and r.get("visual_vector"):

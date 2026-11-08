@@ -125,3 +125,54 @@ def sample_production_plan(sample_scenes):
         "totalDuration": "00:27",
         "scenes": sample_scenes,
     }
+
+
+# ── Signed-in clients for server.py (temporary DB + workspaces) ───────────────
+
+@pytest.fixture
+def make_user_client(tmp_path, monkeypatch):
+    """
+    Factory: make_user_client("a@example.com") → a TestClient for server.app,
+    signed in as a fresh user. All users share one temporary database and a
+    temporary data/users/ folder, so nothing touches the real data/.
+    """
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+
+    import server
+    from backend import auth, workspace
+    from backend.config import Settings
+    from backend.db import get_db, make_engine, migrate
+    from backend.mailer import ConsoleMailer
+
+    url = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+    migrate(url)
+    engine = make_engine(url)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    settings = Settings(env="test", database_url=url, jwt_secret="t" * 48, cookie_secure=False,
+                        allowed_origins=("http://localhost:5173",), frontend_url="http://localhost:5173")
+    monkeypatch.setattr(workspace, "USERS_DIR", tmp_path / "users")
+
+    def db_override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    overrides = {get_db: db_override, auth.settings_dep: lambda: settings,
+                 auth.mailer_dep: lambda: ConsoleMailer()}
+    server.app.dependency_overrides.update(overrides)
+
+    def make(email="creator@example.com", name="Creator"):
+        client = TestClient(server.app)
+        res = client.post("/auth/signup", json={"name": name, "email": email, "password": "test password 123"})
+        assert res.status_code == 201, res.text
+        client.user_id = res.json()["user"]["id"]
+        return client
+
+    yield make
+    for key in overrides:
+        server.app.dependency_overrides.pop(key, None)
+    engine.dispose()
