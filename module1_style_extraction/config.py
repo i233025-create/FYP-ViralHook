@@ -53,11 +53,23 @@ EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 GROQ_MODEL: str = "openai/gpt-oss-20b"
 
 # ─── Storage Paths ────────────────────────────────────────────────────────────
+# The server runs this module once per user with VIRALHOOK_WORKSPACE set to
+# that user's folder; then every path below lives there (see
+# pipeline/creator_paths.py). Run by hand without it, the original relative
+# paths inside module1_style_extraction/ are used.
+import os as _os
+
+_WORKSPACE = _os.getenv("VIRALHOOK_WORKSPACE", "").strip()
+
+
+def _ws(name: str, default: str) -> str:
+    return _os.path.join(_WORKSPACE, name) if _WORKSPACE else default
+
 
 # Directory where ChromaDB persists its vector index between runs.
 # ChromaDB uses SQLite + its own file format under this folder.
 # If the folder doesn't exist, ChromaDB creates it automatically.
-CHROMA_PERSIST_DIR: str = "./chroma_db"
+CHROMA_PERSIST_DIR: str = _ws("chroma_db", "./chroma_db")
 
 # ChromaDB collection name — think of it as a "table" in a SQL database.
 # All per-video profile documents are stored in this collection.
@@ -65,10 +77,10 @@ COLLECTION_NAME: str = "video_profiles"
 
 # Temporary folder for downloaded audio files.
 # Files here are deleted after transcription to save disk space.
-TEMP_AUDIO_DIR: str = "./temp_audio"
+TEMP_AUDIO_DIR: str = _ws("temp_audio", "./temp_audio")
 
 # Path where the final master creator profile JSON will be saved.
-OUTPUT_FILE: str = "creator_profile.json"
+OUTPUT_FILE: str = _ws("creator_profile.json", "creator_profile.json")
 
 # ─── Input Mode ───────────────────────────────────────────────────────────────
 # Controls where the pipeline reads video input from.
@@ -78,7 +90,7 @@ OUTPUT_FILE: str = "creator_profile.json"
 INPUT_MODE: str = "local"  # Switch to "youtube" to use URLs instead
 
 # Directory to scan for local video files when INPUT_MODE = "local"
-LOCAL_VIDEO_DIR: str = "./input_videos"
+LOCAL_VIDEO_DIR: str = _ws("input_videos", "./input_videos")
 
 # ─── Sample YouTube Shorts URLs ───────────────────────────────────────────────
 # Three Fireship YouTube Shorts used as the corpus for this POC.

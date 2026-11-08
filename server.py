@@ -1,8 +1,12 @@
 """
 server.py — ViralHook PoC Backend
 ===================================
+Every endpoint except /, /health and /auth/* needs a signed-in user, and works
+on that user's own workspace (data/users/<id>/, see backend/workspace.py).
+
 Endpoints:
 
+  /auth/*                         → sign up, log in, sessions (backend/auth.py)
   GET  /health
   GET  /onboarding/profile        → reads creator_profile.json → frontend profile shape
   POST /onboarding/upload         → save videos, run Module 1 + 2 in background (returns job_id)
@@ -31,10 +35,11 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -47,17 +52,29 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / "module1_style_extraction" / ".env")
 load_dotenv(ROOT / ".env")
 
-PROFILE_PATH = ROOT / "module1_style_extraction" / "creator_profile.json"
-MULTIMODAL_PROFILE_PATH = ROOT / "module2_multimodal_rag" / "creator_profile_multimodal.json"
+from backend import auth  # noqa: E402
+from backend.config import get_settings  # noqa: E402
+from backend.db import migrate  # noqa: E402
+from backend.models import User  # noqa: E402
+from backend.workspace import Workspace, child_dir, current_workspace  # noqa: E402
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="ViralHook PoC API", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    migrate()   # create / upgrade the product database (SQLite in development)
+    yield
+
+
+app = FastAPI(title="ViralHook API", version="0.2.0", lifespan=_lifespan)
+auth.install_origin_guard(app)   # registered first, so it runs inside CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=list(get_settings().allowed_origins),
+    allow_credentials=True,          # session cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth.router)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -216,14 +233,13 @@ def health():
         "status": "ok",
         "llm_provider": os.getenv("LLM_PROVIDER", "ollama"),
         "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
-        "creator_profile_exists": PROFILE_PATH.exists(),
     }
 
 
 # ── Task 1: Creator Profile ───────────────────────────────────────────────────
 
 @app.get("/onboarding/profile")
-def get_creator_profile(handle: str = "", niche: str = ""):
+def get_creator_profile(handle: str = "", niche: str = "", ws: Workspace = Depends(current_workspace)):
     """
     GET /onboarding/profile?handle=@creator&niche=Tech
 
@@ -234,18 +250,15 @@ def get_creator_profile(handle: str = "", niche: str = ""):
       - api.js processCreatorVideos() after mock steps complete
       - Any page refresh that needs to reload the profile
     """
-    if not PROFILE_PATH.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="No creator profile found. Run Module 1 pipeline first: "
-                   "cd module1_style_extraction && venv/Scripts/python main.py"
-        )
+    paths = ws.creator
+    if not paths.text_profile.exists():
+        raise HTTPException(status_code=404, detail="No creator profile yet. Upload your videos to build one.")
 
-    with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+    with open(paths.text_profile, "r", encoding="utf-8") as f:
         raw = json.load(f)
     # Module 2's measured visual/audio stats (shot length, wpm, energy) when available
-    if MULTIMODAL_PROFILE_PATH.exists():
-        with open(MULTIMODAL_PROFILE_PATH, "r", encoding="utf-8") as f:
+    if paths.multimodal_profile.exists():
+        with open(paths.multimodal_profile, "r", encoding="utf-8") as f:
             multimodal = json.load(f)
         for key in ("visual_analysis", "audio_analysis", "_analyzed_videos"):
             if key in multimodal:
@@ -256,27 +269,16 @@ def get_creator_profile(handle: str = "", niche: str = ""):
 
 
 # ── Profile extraction from uploaded videos ──────────────────────────────────
-# Upload replaces the current creator: the previous videos, ChromaDB and
-# profiles are moved to profiles_archive/<timestamp>/ so two creators never
-# mix in one knowledge base, and are restored if extraction fails. Module 1
-# and Module 2 run as their own CLI subprocesses (same output as running them
-# by hand) on the GPU worker thread shared with video renders.
+# Upload replaces the user's current profile: their previous videos, ChromaDB
+# and profiles move to <workspace>/archive/<timestamp>/ so one profile never
+# mixes two sets of videos, and are restored if extraction fails. Module 1
+# and Module 2 run as their own CLI subprocesses with VIRALHOOK_WORKSPACE set
+# to the user's folder, on the GPU worker thread shared with video renders.
 
 MODULE1_DIR = ROOT / "module1_style_extraction"
 MODULE2_DIR = ROOT / "module2_multimodal_rag"
-INPUT_VIDEOS_DIR = MODULE1_DIR / "input_videos"
-ARCHIVE_DIR = ROOT / "profiles_archive"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MAX_UPLOAD_VIDEOS = 10
-
-# Everything that belongs to one creator, relative to ROOT
-CREATOR_ARTIFACTS = [
-    "module1_style_extraction/input_videos",
-    "module1_style_extraction/chroma_db",
-    "module1_style_extraction/creator_profile.json",
-    "module2_multimodal_rag/creator_profile_multimodal.json",
-    "module2_multimodal_rag/qdrant_snapshot.json",
-]
 
 PROFILE_STEPS = [
     {"id": 1, "label": "Uploading videos"},
@@ -295,27 +297,11 @@ def _update_profile_job(job_id: str, **fields):
         _profile_jobs[job_id].update(fields)
 
 
-def _archive_creator(stamp: str) -> Path:
-    """Move the current creator's artifacts to profiles_archive/<stamp>/."""
-    dest = ARCHIVE_DIR / stamp
-    for rel in CREATOR_ARTIFACTS:
-        src = ROOT / rel
-        if src.exists():
-            (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(dest / rel))
-    return dest
-
-
-def _restore_creator(archive: Path):
-    """Undo a failed extraction: park its partial output, bring the old creator back."""
-    failed = archive.with_name(archive.name + "_failed")
-    for rel in CREATOR_ARTIFACTS:
-        cur, old = ROOT / rel, archive / rel
-        if cur.exists():
-            (failed / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(cur), str(failed / rel))
-        if old.exists():
-            shutil.move(str(old), str(cur))
+def _owned(jobs: dict, lock, job_id: str, user: User) -> dict:
+    """A copy of the user's own job; someone else's job looks exactly like a missing one."""
+    with lock:
+        job = jobs.get(job_id)
+        return dict(job) if job and job.get("ownerId") == user.id else {}
 
 
 # Module 1 prints "STAGE 2 — Profile Extraction (Video 1/3)"; Module 2 prints
@@ -324,8 +310,8 @@ _M1_STAGE = re.compile(r"STAGE (\d) — ([^(\n]+?)\s*\(Video (\d+)/(\d+)\)")
 _M2_VIDEO = re.compile(r"Video (\d+)/(\d+): (\S+)")
 
 
-def _run_module(job_id: str, cmd: list, cwd: Path, on_line):
-    env = {**os.environ, "PYTHONUNBUFFERED": "1", "COLUMNS": "200", "NO_COLOR": "1"}
+def _run_module(job_id: str, cmd: list, cwd: Path, on_line, ws: Workspace):
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", "COLUMNS": "200", "NO_COLOR": "1", **ws.subprocess_env()}
     log = []
     proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, text=True, encoding="utf-8",
                             errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -341,7 +327,7 @@ def _run_module(job_id: str, cmd: list, cwd: Path, on_line):
         raise RuntimeError(f"{cmd[-1]} exited with code {proc.returncode}:\n{tail}")
 
 
-def _run_profile_job(job_id: str, archive: Path):
+def _run_profile_job(job_id: str, archive: Path, ws: Workspace):
     _update_profile_job(job_id, status="running", step=2, stepLabel=PROFILE_STEPS[1]["label"],
                         detail="Loading Whisper + LLM…")
 
@@ -367,27 +353,29 @@ def _run_profile_job(job_id: str, archive: Path):
                                 detail="Merging text + visual + audio stats")
 
     try:
-        _run_module(job_id, [sys.executable, "-u", "main.py"], MODULE1_DIR, module1_line)
+        _run_module(job_id, [sys.executable, "-u", "main.py"], MODULE1_DIR, module1_line, ws)
         _update_profile_job(job_id, step=4, stepLabel=PROFILE_STEPS[3]["label"],
                             detail="Loading CLIP…")
         _run_module(job_id, [sys.executable, "-u", "module2_multimodal_rag/main.py"], ROOT,
-                    module2_line)
-        if not PROFILE_PATH.exists():
+                    module2_line, ws)
+        if not ws.creator.text_profile.exists():
             raise RuntimeError("Module 1 finished but creator_profile.json was not written.")
         _update_profile_job(job_id, status="done", step=len(PROFILE_STEPS), detail="")
     except Exception as e:
-        _restore_creator(archive)
+        ws.restore_profile(archive)
         _update_profile_job(job_id, status="error",
                             error=f"{e}\n(Previous creator profile restored.)")
 
 
 @app.post("/onboarding/upload")
 def onboarding_upload(files: List[UploadFile] = File(...),
-                      handle: str = Form(""), niche: str = Form("")):
+                      handle: str = Form(""), niche: str = Form(""),
+                      user: User = Depends(auth.get_current_user),
+                      ws: Workspace = Depends(current_workspace)):
     """
     POST /onboarding/upload  multipart: files[], handle, niche
 
-    Saves the videos as the new creator's input_videos/ and starts Module 1 +
+    Saves the videos as the user's input_videos/ and starts Module 1 +
     Module 2 in the background. Poll /onboarding/status/{job_id}; when done,
     GET /onboarding/profile returns the freshly extracted profile.
     """
@@ -398,36 +386,38 @@ def onboarding_upload(files: List[UploadFile] = File(...),
     if len(videos) > MAX_UPLOAD_VIDEOS:
         raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_VIDEOS} videos.")
     with _profile_lock:
-        if any(j["status"] in ("queued", "running") for j in _profile_jobs.values()):
-            raise HTTPException(status_code=409, detail="A profile extraction is already running.")
+        if any(j["status"] in ("queued", "running") and j["ownerId"] == user.id
+               for j in _profile_jobs.values()):
+            raise HTTPException(status_code=409, detail="Your profile is already being built.")
         job_id = uuid.uuid4().hex[:12]
-        _profile_jobs[job_id] = {"jobId": job_id, "status": "queued", "step": 1,
+        _profile_jobs[job_id] = {"jobId": job_id, "ownerId": user.id, "status": "queued", "step": 1,
                                  "stepLabel": PROFILE_STEPS[0]["label"], "detail": "",
                                  "steps": PROFILE_STEPS, "log": [],
                                  "handle": handle, "niche": niche}
 
-    archive = _archive_creator(time.strftime("%Y%m%d-%H%M%S"))
+    archive = ws.archive_profile(time.strftime("%Y%m%d-%H%M%S"))
+    input_dir = ws.creator.input_videos
     try:
-        INPUT_VIDEOS_DIR.mkdir(parents=True)
+        input_dir.mkdir(parents=True)
         for i, up in enumerate(videos, start=1):
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(up.filename).name)
-            with open(INPUT_VIDEOS_DIR / f"{i:02d}_{safe}", "wb") as out:
+            with open(input_dir / f"{i:02d}_{safe}", "wb") as out:
                 shutil.copyfileobj(up.file, out)
     except Exception as e:
-        _restore_creator(archive)
+        ws.restore_profile(archive)
         _update_profile_job(job_id, status="error", error=f"Saving uploads failed: {e}")
         raise HTTPException(status_code=500, detail=f"Saving uploads failed: {e}")
     _update_profile_job(job_id, detail=f"{len(videos)} video(s) saved")
 
-    _video_executor.submit(_run_profile_job, job_id, archive)
+    _video_executor.submit(_run_profile_job, job_id, archive, ws)
     return {"jobId": job_id, "steps": PROFILE_STEPS}
 
 
 @app.get("/onboarding/status/{job_id}")
-def onboarding_status(job_id: str):
+def onboarding_status(job_id: str, user: User = Depends(auth.get_current_user)):
     """Progress (step, detail, last log lines); status done → fetch /onboarding/profile."""
-    with _profile_lock:
-        job = dict(_profile_jobs.get(job_id) or {})
+    job = _owned(_profile_jobs, _profile_lock, job_id, user)
+    job.pop("ownerId", None)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown profile job.")
     return job
@@ -457,7 +447,7 @@ def _trend_to_frontend(trend: dict, index: int, niche: str) -> dict:
 
 
 @app.post("/research/trends")
-def research_trends(body: ResearchRequest):
+def research_trends(body: ResearchRequest, ws: Workspace = Depends(current_workspace)):
     """
     POST /research/trends  { niche: string }
 
@@ -470,8 +460,8 @@ def research_trends(body: ResearchRequest):
     from pipeline.agents.research_agent import run_research
 
     creator_profile = {}
-    if PROFILE_PATH.exists():
-        with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+    if ws.creator.text_profile.exists():
+        with open(ws.creator.text_profile, "r", encoding="utf-8") as f:
             creator_profile = json.load(f)
 
     try:
@@ -491,7 +481,7 @@ def research_trends(body: ResearchRequest):
 # ── Script Generation ─────────────────────────────────────────────────────────
 
 @app.post("/script/generate")
-def generate_scripts(body: ScriptRequest):
+def generate_scripts(body: ScriptRequest, ws: Workspace = Depends(current_workspace)):
     """
     POST /script/generate  { topic, niche, trend? }
 
@@ -509,14 +499,14 @@ def generate_scripts(body: ScriptRequest):
     from pipeline.agents.scripting_agent import generate_variants, REGEN_THRESHOLD
     from pipeline.local_llm import LocalLLMError
 
-    if not PROFILE_PATH.exists():
+    if not ws.creator.text_profile.exists():
         raise HTTPException(status_code=400,
-                            detail="No creator profile found. Run Module 1 pipeline first.")
-    with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+                            detail="No creator profile yet. Upload your videos to build one.")
+    with open(ws.creator.text_profile, "r", encoding="utf-8") as f:
         creator_profile = json.load(f)
 
     try:
-        results = generate_variants(body.topic, trend=body.trend, profile=creator_profile)
+        results = generate_variants(body.topic, trend=body.trend, profile=creator_profile, paths=ws.creator)
     except LocalLLMError as e:
         raise HTTPException(status_code=503, detail=f"LLM unavailable: {e}")
     except Exception as e:
@@ -534,7 +524,7 @@ def generate_scripts(body: ScriptRequest):
 # ── XML Export ────────────────────────────────────────────────────────────────
 
 @app.post("/export/xml")
-def export_xml(body: ExportXMLRequest):
+def export_xml(body: ExportXMLRequest, user: User = Depends(auth.get_current_user)):
     """
     POST /export/xml  { plan: { title, scenes[] } }
 
@@ -589,35 +579,36 @@ def _update_job(job_id: str, **fields):
 
 # ── Creator photos (E3): upload → SigLIP suggestions → creator review ─────────
 
-ASSET_UPLOAD_DIR = ROOT / "pipeline" / "cache" / "creator_uploads"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".jfif", ".bmp"}
 MAX_UPLOAD_PHOTOS = 40
-_asset_libraries: dict = {}            # library_id → CreatorAssetLibrary (embeddings stay in memory)
+_asset_libraries: dict = {}            # library folder → CreatorAssetLibrary (embeddings stay in memory)
 _asset_lock = threading.Lock()
 _siglip = None                         # one SigLIP encoder shared by all libraries
 
 
-def _library_dir(library_id: str) -> Path:
+def _library_dir(ws: Workspace, library_id: str) -> Path:
+    """The user's own photo library; another user's id is simply unknown."""
     if not re.fullmatch(r"[0-9a-f]{12}", library_id or ""):
         raise HTTPException(status_code=400, detail="Bad asset library id.")
-    folder = ASSET_UPLOAD_DIR / library_id
-    if not folder.is_dir():
+    folder = child_dir(ws.assets_dir, library_id)
+    if folder is None:
         raise HTTPException(status_code=404, detail="Unknown asset library.")
     return folder
 
 
-def _get_library(library_id: str):
+def _get_library(ws: Workspace, library_id: str):
     """CreatorAssetLibrary for an uploaded set (cached, so photos are embedded once)."""
     global _siglip
     from pipeline.agents.video_agent import CACHE_DIR
     from pipeline.video.creator_assets import CreatorAssetLibrary, SiglipEncoder
 
-    folder = _library_dir(library_id)
+    folder = _library_dir(ws, library_id)
+    key = str(folder)
     with _asset_lock:
-        if library_id not in _asset_libraries:
+        if key not in _asset_libraries:
             _siglip = _siglip or SiglipEncoder()
-            _asset_libraries[library_id] = CreatorAssetLibrary(folder, CACHE_DIR, encoder=_siglip)
-        return _asset_libraries[library_id]
+            _asset_libraries[key] = CreatorAssetLibrary(folder, CACHE_DIR, encoder=_siglip)
+        return _asset_libraries[key]
 
 
 def _photo_list(library_id: str, folder: Path) -> list[dict]:
@@ -626,7 +617,7 @@ def _photo_list(library_id: str, folder: Path) -> list[dict]:
 
 
 @app.post("/assets/upload")
-def assets_upload(files: List[UploadFile] = File(...)):
+def assets_upload(files: List[UploadFile] = File(...), ws: Workspace = Depends(current_workspace)):
     """
     POST /assets/upload  multipart: files[]  (the creator's photos for this video)
     → { libraryId, photos: [{name, url}] }
@@ -638,7 +629,7 @@ def assets_upload(files: List[UploadFile] = File(...)):
     if len(photos) > MAX_UPLOAD_PHOTOS:
         raise HTTPException(status_code=400, detail=f"At most {MAX_UPLOAD_PHOTOS} photos.")
     library_id = uuid.uuid4().hex[:12]
-    folder = ASSET_UPLOAD_DIR / library_id
+    folder = ws.assets_dir / library_id
     folder.mkdir(parents=True)
     for i, up in enumerate(photos, start=1):
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(up.filename).name)
@@ -648,8 +639,8 @@ def assets_upload(files: List[UploadFile] = File(...)):
 
 
 @app.get("/assets/{library_id}/file/{name}")
-def assets_file(library_id: str, name: str):
-    folder = _library_dir(library_id)
+def assets_file(library_id: str, name: str, ws: Workspace = Depends(current_workspace)):
+    folder = _library_dir(ws, library_id)
     path = folder / Path(name).name
     if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
         raise HTTPException(status_code=404, detail="Photo not found.")
@@ -657,7 +648,7 @@ def assets_file(library_id: str, name: str):
 
 
 @app.post("/assets/match")
-def assets_match(body: AssetMatchRequest):
+def assets_match(body: AssetMatchRequest, ws: Workspace = Depends(current_workspace)):
     """
     POST /assets/match { libraryId, plan }
     → { threshold, photos, scenes: [{index, segment, clipIdea, ranked[{name, score}], suggested}] }
@@ -665,7 +656,7 @@ def assets_match(body: AssetMatchRequest):
     """
     from pipeline.video.timeline import normalize_scenes
 
-    library = _get_library(body.libraryId)
+    library = _get_library(ws, body.libraryId)
     try:
         scenes = normalize_scenes(body.plan)
     except ValueError as e:
@@ -682,18 +673,21 @@ def assets_match(body: AssetMatchRequest):
     }
 
 
-def _run_video_job(job_id: str, plan: dict, mode: str, library_id: str | None = None,
+def _run_video_job(job_id: str, plan: dict, mode: str, ws: Workspace, library_id: str | None = None,
                    scene_assets: dict | None = None):
     from pipeline.agents.video_agent import generate_video, load_profile
+    from pipeline.video.creator_visual import load_creator_visual
     from pipeline.video.timeline import to_frontend
 
     _update_job(job_id, status="running")
     try:
         result = generate_video(
-            plan, load_profile(), mode=mode, job_id=job_id,
+            plan, load_profile(ws.creator), mode=mode, job_id=job_id,
+            out_dir=ws.videos_dir / job_id,
             title=plan.get("title", "ViralHook"),
             on_step=lambda n, label, detail: _update_job(job_id, step=n, stepLabel=label, detail=detail),
-            assets=_get_library(library_id) if library_id else None,
+            creator=load_creator_visual(ws.creator.qdrant_snapshot),
+            assets=_get_library(ws, library_id) if library_id else None,
             scene_assets={int(k): v for k, v in scene_assets.items()} if scene_assets is not None else None,
         )
         _update_job(job_id, status="done", videoPath=result["video_path"],
@@ -704,7 +698,8 @@ def _run_video_job(job_id: str, plan: dict, mode: str, library_id: str | None = 
 
 
 @app.post("/video/generate")
-def video_generate(body: VideoRequest):
+def video_generate(body: VideoRequest, user: User = Depends(auth.get_current_user),
+                   ws: Workspace = Depends(current_workspace)):
     """
     POST /video/generate  { plan: { title, scenes[] }, mode? }
 
@@ -718,34 +713,33 @@ def video_generate(body: VideoRequest):
     if not body.plan.get("scenes"):
         raise HTTPException(status_code=400, detail="No scenes in production plan.")
 
+    if body.assetLibraryId:
+        _library_dir(ws, body.assetLibraryId)   # 400/404 now rather than inside the job
     job_id = uuid.uuid4().hex[:12]
     with _video_lock:
-        _video_jobs[job_id] = {"jobId": job_id, "status": "queued", "mode": body.mode,
+        _video_jobs[job_id] = {"jobId": job_id, "ownerId": user.id, "status": "queued", "mode": body.mode,
                                "step": 0, "stepLabel": "", "detail": "", "steps": STEPS}
-    if body.assetLibraryId:
-        _library_dir(body.assetLibraryId)   # 400/404 now rather than inside the job
-    _video_executor.submit(_run_video_job, job_id, body.plan, body.mode,
+    _video_executor.submit(_run_video_job, job_id, body.plan, body.mode, ws,
                            body.assetLibraryId, body.sceneAssets)
     return {"jobId": job_id, "steps": STEPS}
 
 
 @app.get("/video/status/{job_id}")
-def video_status(job_id: str):
+def video_status(job_id: str, user: User = Depends(auth.get_current_user)):
     """Progress while running; timeline + evaluation + videoUrl once done."""
-    with _video_lock:
-        job = dict(_video_jobs.get(job_id) or {})
+    job = _owned(_video_jobs, _video_lock, job_id, user)
     if not job:
         raise HTTPException(status_code=404, detail="Unknown video job.")
     job.pop("videoPath", None)
+    job.pop("ownerId", None)
     if job["status"] == "done":
         job["videoUrl"] = f"/video/file/{job_id}"
     return job
 
 
 @app.get("/video/file/{job_id}")
-def video_file(job_id: str):
-    with _video_lock:
-        path = (_video_jobs.get(job_id) or {}).get("videoPath")
+def video_file(job_id: str, user: User = Depends(auth.get_current_user)):
+    path = _owned(_video_jobs, _video_lock, job_id, user).get("videoPath")
     if not path or not Path(path).exists():
         raise HTTPException(status_code=404, detail="Video not ready.")
     return FileResponse(path, media_type="video/mp4", filename=f"viralhook_{job_id}.mp4")

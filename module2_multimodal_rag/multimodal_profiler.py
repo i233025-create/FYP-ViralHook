@@ -338,7 +338,8 @@ def build_multimodal_creator_profile(
         )
 
         # Use module1's ChromaDB if it has data
-        chroma_path = str(_WORKSPACE_ROOT / "module1_style_extraction" / "chroma_db")
+        from pipeline.creator_paths import CreatorPaths
+        chroma_path = str(CreatorPaths.from_env().chroma_db)
         vector_store = initialize_vector_store(chroma_path, "video_profiles")
         retriever    = get_retriever(vector_store, k=3)
         chain        = create_creator_profile_chain(groq_api_key)

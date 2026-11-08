@@ -35,3 +35,10 @@ scikit-learn==1.9.0             # TF-IDF vectoriser used in research_agent topic
 fastapi==0.111.0                # FastAPI web framework
 uvicorn==0.29.0                 # ASGI server for FastAPI
 python-multipart==0.0.9         # Required for FastAPI file uploads
+
+# ─── Product backend: users, auth, database (backend/) ───────────────────────
+SQLAlchemy>=2.0.30               # ORM; SQLite in development, Postgres in production
+alembic>=1.13                    # database migrations (run automatically on startup)
+argon2-cffi>=23.1                # argon2id password hashing
+PyJWT>=2.8                       # short-lived access tokens
+email-validator>=2.1             # validates sign-up emails (pydantic EmailStr)

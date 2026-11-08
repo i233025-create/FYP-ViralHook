@@ -3,6 +3,7 @@ import AppShell from './components/AppShell'
 
 // Screens
 import AuthScreen               from './screens/auth/AuthScreen'
+import { VerifyEmailScreen, ResetPasswordScreen, BootScreen } from './screens/auth/EmailLinkScreens'
 import CreatorTypeScreen        from './screens/onboarding/CreatorTypeScreen'
 import NewCreatorScreen         from './screens/onboarding/NewCreatorScreen'
 import ExperiencedCreatorScreen from './screens/onboarding/ExperiencedCreatorScreen'
@@ -20,7 +21,10 @@ function Router() {
   const { screen } = useApp()
 
   const SCREEN_MAP = {
+    'boot':                    <BootScreen />,
     'auth':                    <AuthScreen />,
+    'verify-email':            <VerifyEmailScreen />,
+    'reset-password':          <ResetPasswordScreen />,
     'creator-type':            <CreatorTypeScreen />,
     'onboarding-new':          <NewCreatorScreen />,
     'onboarding-experienced':  <ExperiencedCreatorScreen />,

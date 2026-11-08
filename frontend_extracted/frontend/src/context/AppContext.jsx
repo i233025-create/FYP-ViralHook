@@ -1,6 +1,17 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import {
+  USE_REAL_BACKEND, getCurrentUser, getCreatorProfile, logoutUser, setSessionExpiredHandler,
+} from '../services/api'
 
 const AppContext = createContext(null)
+
+// Email links land on /verify-email?token=… and /reset-password?token=…
+// (there is no router; the path picks the first screen).
+const LINK_SCREENS = { '/verify-email': 'verify-email', '/reset-password': 'reset-password' }
+const LINK = {
+  screen: LINK_SCREENS[window.location.pathname] || null,
+  token: new URLSearchParams(window.location.search).get('token') || '',
+}
 
 // Demo shortcut: http://localhost:5173/?demo=photos opens the creator-photo
 // review step (experiment E3) directly, with a FAST admissions script, so it
@@ -39,11 +50,31 @@ export function AppProvider({ children }) {
   const [videoResult, setVideoResult]         = useState(null)    // { videoUrl, evaluation, mode }
   const [publishStatus, setPublishStatus]     = useState(null)
 
-  // Navigation
-  const [screen, setScreen] = useState(DEMO === 'photos' ? 'video-gen' : 'auth')
+  // Navigation. 'boot' = checking for an existing session (see effect below).
+  const initialScreen = DEMO === 'photos' ? 'video-gen' : LINK.screen || (USE_REAL_BACKEND ? 'boot' : 'auth')
+  const [screen, setScreen] = useState(initialScreen)
   const navigate = useCallback((s) => setScreen(s), [])
+  const [authNotice, setAuthNotice] = useState('')     // shown on the sign-in screen
+  const linkToken = LINK.token
 
-  const logout = useCallback(() => {
+  /** After sign-in or session restore: dashboard if the user has a profile, else onboarding. */
+  const enterApp = useCallback(async (signedInUser) => {
+    setUser(signedInUser)
+    let profile = null
+    try {
+      profile = await getCreatorProfile()
+    } catch {
+      profile = null   // server hiccup: onboarding still works, dashboard loads later
+    }
+    if (profile) {
+      setCreatorProfile(profile)
+      setScreen('dashboard')
+    } else {
+      setScreen('creator-type')
+    }
+  }, [])
+
+  const clearState = useCallback(() => {
     setUser(null)
     setCreatorProfile(null)
     setSelectedTopic(null)
@@ -54,8 +85,34 @@ export function AppProvider({ children }) {
     setVideoTimeline(null)
     setVideoResult(null)
     setPublishStatus(null)
-    setScreen('auth')
   }, [])
+
+  const logout = useCallback(async () => {
+    await logoutUser()
+    clearState()
+    setAuthNotice('')
+    setScreen('auth')
+  }, [clearState])
+
+  // A session that can't be renewed (expired, signed out elsewhere) → sign-in screen.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      clearState()
+      setAuthNotice('Your session has ended. Please sign in again.')
+      setScreen('auth')
+    })
+  }, [clearState])
+
+  // Returning visitor: restore the session from the cookie instead of asking to sign in.
+  useEffect(() => {
+    if (initialScreen !== 'boot') return
+    getCurrentUser()
+      .then((u) => (u ? enterApp(u) : setScreen('auth')))
+      .catch(() => {
+        setAuthNotice("Can't reach the ViralHook server right now.")
+        setScreen('auth')
+      })
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AppContext.Provider
@@ -71,7 +128,7 @@ export function AppProvider({ children }) {
         videoResult, setVideoResult,
         publishStatus, setPublishStatus,
         screen, navigate,
-        logout,
+        logout, enterApp, authNotice, setAuthNotice, linkToken,
       }}
     >
       {children}

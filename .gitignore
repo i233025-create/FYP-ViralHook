@@ -86,3 +86,6 @@ frontend.zip
 
 # Archived creators (videos, ChromaDB, profiles) from UI uploads
 profiles_archive/
+
+# ── Product data: database, per-user workspaces, dev JWT secret ──────────────
+/data/

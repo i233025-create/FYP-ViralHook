@@ -26,7 +26,12 @@ services:
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      # Sign-in tokens: set a long random JWT_SECRET in .env (required when APP_ENV=production)
+      - JWT_SECRET=${JWT_SECRET}
+      - APP_ENV=${APP_ENV:-development}
     volumes:
+      # Product data: users database + one workspace folder per user
+      - ./data:/app/data
       # Mount input_videos so you can add videos without rebuilding
       - ./module1_style_extraction/input_videos:/app/module1_style_extraction/input_videos
       # Mount profile output so it persists between container restarts
