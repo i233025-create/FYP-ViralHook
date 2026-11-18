@@ -165,11 +165,22 @@ def make_user_client(tmp_path, monkeypatch):
                  auth.mailer_dep: lambda: ConsoleMailer()}
     server.app.dependency_overrides.update(overrides)
 
-    def make(email="creator@example.com", name="Creator"):
+    def make(email="creator@example.com", name="Creator", plan="pro"):
+        """plan: 'free' (no subscription) or a paid plan id put in place directly."""
+        from datetime import timedelta
+        from backend.models import Subscription, utcnow
+
         client = TestClient(server.app)
         res = client.post("/auth/signup", json={"name": name, "email": email, "password": "test password 123"})
         assert res.status_code == 201, res.text
         client.user_id = res.json()["user"]["id"]
+        if plan != "free":
+            with Session() as db:
+                now = utcnow()
+                db.add(Subscription(user_id=client.user_id, plan=plan, current_period_start=now,
+                                    current_period_end=now + timedelta(days=30)))
+                db.commit()
+        client.Session = Session
         return client
 
     yield make

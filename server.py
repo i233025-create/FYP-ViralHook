@@ -7,6 +7,8 @@ on that user's own workspace (data/users/<id>/, see backend/workspace.py).
 Endpoints:
 
   /auth/*                         → sign up, log in, sessions (backend/auth.py)
+  /billing/*                      → plans, usage, checkout (backend/billing.py)
+  Script generation, research and video renders use plan credits (402 when used up).
   GET  /health
   GET  /onboarding/profile        → reads creator_profile.json → frontend profile shape
   POST /onboarding/upload         → save videos, run Module 1 + 2 in background (returns job_id)
@@ -52,7 +54,8 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / "module1_style_extraction" / ".env")
 load_dotenv(ROOT / ".env")
 
-from backend import auth  # noqa: E402
+from backend import auth, billing  # noqa: E402
+from backend.billing import Meter, metered  # noqa: E402
 from backend.config import get_settings  # noqa: E402
 from backend.db import migrate  # noqa: E402
 from backend.models import User  # noqa: E402
@@ -75,6 +78,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth.router)
+app.include_router(billing.router)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -447,7 +451,8 @@ def _trend_to_frontend(trend: dict, index: int, niche: str) -> dict:
 
 
 @app.post("/research/trends")
-def research_trends(body: ResearchRequest, ws: Workspace = Depends(current_workspace)):
+def research_trends(body: ResearchRequest, ws: Workspace = Depends(current_workspace),
+                    meter: Meter = Depends(metered("research"))):
     """
     POST /research/trends  { niche: string }
 
@@ -472,6 +477,7 @@ def research_trends(body: ResearchRequest, ws: Workspace = Depends(current_works
     if not result["trends"]:
         raise HTTPException(status_code=503, detail=result["error"] or "No trends found.")
 
+    meter.charge(note=body.niche or "")   # only successful research uses a credit
     return {
         "topics": [_trend_to_frontend(t, i, body.niche) for i, t in enumerate(result["trends"])],
         "queries": result["queries"],
@@ -481,7 +487,8 @@ def research_trends(body: ResearchRequest, ws: Workspace = Depends(current_works
 # ── Script Generation ─────────────────────────────────────────────────────────
 
 @app.post("/script/generate")
-def generate_scripts(body: ScriptRequest, ws: Workspace = Depends(current_workspace)):
+def generate_scripts(body: ScriptRequest, ws: Workspace = Depends(current_workspace),
+                     meter: Meter = Depends(metered("script"))):
     """
     POST /script/generate  { topic, niche, trend? }
 
@@ -514,6 +521,7 @@ def generate_scripts(body: ScriptRequest, ws: Workspace = Depends(current_worksp
 
     variants = [_script_to_variant(script, meta, body.topic, i)
                 for i, (script, meta) in enumerate(results)]
+    meter.charge(note=body.topic)   # only a successful generation uses a credit
     passing = REGEN_THRESHOLD * 10
     return {
         "failed": all(v["overall"] is not None and v["overall"] < passing for v in variants),
@@ -674,7 +682,7 @@ def assets_match(body: AssetMatchRequest, ws: Workspace = Depends(current_worksp
 
 
 def _run_video_job(job_id: str, plan: dict, mode: str, ws: Workspace, library_id: str | None = None,
-                   scene_assets: dict | None = None):
+                   scene_assets: dict | None = None, refund=None):
     from pipeline.agents.video_agent import generate_video, load_profile
     from pipeline.video.creator_visual import load_creator_visual
     from pipeline.video.timeline import to_frontend
@@ -695,11 +703,16 @@ def _run_video_job(job_id: str, plan: dict, mode: str, ws: Workspace, library_id
                     seconds=result["seconds"])
     except Exception as e:
         _update_job(job_id, status="error", error=str(e))
+        if refund:
+            try:
+                refund()   # a failed render doesn't cost a credit
+            except Exception as refund_error:  # never hide the render error behind a refund problem
+                print(f"[billing] refund for video job {job_id} failed: {refund_error}")
 
 
 @app.post("/video/generate")
 def video_generate(body: VideoRequest, user: User = Depends(auth.get_current_user),
-                   ws: Workspace = Depends(current_workspace)):
+                   ws: Workspace = Depends(current_workspace), meter: Meter = Depends(metered("render"))):
     """
     POST /video/generate  { plan: { title, scenes[] }, mode? }
 
@@ -719,8 +732,9 @@ def video_generate(body: VideoRequest, user: User = Depends(auth.get_current_use
     with _video_lock:
         _video_jobs[job_id] = {"jobId": job_id, "ownerId": user.id, "status": "queued", "mode": body.mode,
                                "step": 0, "stepLabel": "", "detail": "", "steps": STEPS}
+    meter.charge(note=f"{body.mode} render {job_id}")
     _video_executor.submit(_run_video_job, job_id, body.plan, body.mode, ws,
-                           body.assetLibraryId, body.sceneAssets)
+                           body.assetLibraryId, body.sceneAssets, meter.refund_later())
     return {"jobId": job_id, "steps": STEPS}
 
 
