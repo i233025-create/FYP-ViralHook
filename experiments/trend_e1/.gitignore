@@ -1,0 +1,2 @@
+# Per-run JSON holds other creators' titles/captions and changes every run; the summary and labels are fine to commit.
+results/*.json

@@ -37,6 +37,7 @@ def no_llm(monkeypatch):
     def fail(*args, **kwargs):
         raise LocalLLMError("Ollama not running (test)")
     monkeypatch.setattr(ra, "chat_json", fail)
+    monkeypatch.delenv("TREND_SOURCE", raising=False)   # default (youtube) in every test
 
 
 # ── [1] Queries ────────────────────────────────────────────────────────────────
@@ -186,11 +187,11 @@ def test_build_trends_requires_multiple_channels():
     assert 0.0 <= trend["trend_score"] <= 1.0
 
 
-def test_build_trends_low_confidence_when_nothing_qualifies():
+def test_single_video_and_single_creator_clusters_are_hidden():
     videos, emb = _scored_world()
-    trends = ra.build_trends(videos[:2], emb[:2], [[0], [1]], None)
-    assert trends and all(t["low_confidence"] for t in trends)
-    assert all(t["creator_fit"] == 0.0 for t in trends)
+    # singletons are too small; the phone cluster is one channel's series
+    assert ra.build_trends(videos[:2], emb[:2], [[0], [1]], None) == []
+    assert ra.build_trends(videos, emb, [[3, 4, 5]], None) == []
 
 
 def test_two_video_clusters_fill_slots_as_low_confidence():
@@ -327,3 +328,141 @@ def test_node_never_crashes(sample_creator_profile):
                             run=boom)
     assert out["research_output"]["topic"]
     assert "model download failed" in out["research_error"]
+
+
+# ── Trend definition: 4 checks + trend_type ────────────────────────────────────
+
+def _cluster(n_channels, views, subs, hours, prefix="t"):
+    """One cluster: video i goes to channel i % n_channels."""
+    videos = [_video(f"{prefix}{i}", f"Topic title number {i}", f"ch{i % n_channels}",
+                     views[i], subs, hours_ago=h) for i, h in enumerate(hours)]
+    ra.score_videos(videos, NOW)
+    emb = np.stack([_unit(1, 0.01 * i, 0) for i in range(len(videos))])
+    return videos, emb
+
+
+def _types(videos, emb):
+    return ra.build_trends(videos, emb, [list(range(len(videos)))], None)
+
+
+def test_growth_ratio_counts_recent_vs_earlier_uploads():
+    videos, _ = _cluster(3, [10_000] * 4, 1_000, hours=[10, 20, 30, 200])
+    g = ra.growth_stats(videos)
+    assert (g["recent_count"], g["earlier_count"]) == (3, 1)
+    assert g["growth_ratio"] == pytest.approx((3 / 3 + 0.5) / (1 / 11 + 0.5), abs=1e-3)
+
+
+def test_growth_edge_cases_no_division_by_zero():
+    old, _ = _cluster(3, [10_000] * 3, 1_000, hours=[200, 250, 300])
+    new, _ = _cluster(3, [10_000] * 3, 1_000, hours=[5, 6, 7])
+    assert ra.growth_stats(old)["growth_ratio"] < 1
+    assert ra.growth_stats(new)["growth_ratio"] > ra.GROWTH_RATIO_MIN
+    assert ra.growth_stats([])["growth_ratio"] == 1.0
+
+
+def test_trend_when_all_four_checks_pass():
+    videos, emb = _cluster(3, [50_000] * 4, 10_000, hours=[10, 20, 40, 200])
+    [t] = _types(videos, emb)
+    assert t["trend_type"] == "trend"
+    assert all(t["checks"].values())
+    assert not t["low_confidence"]
+    assert "as fast as the niche overall" in ra._why_trending(t)
+
+
+def test_growing_is_relative_to_the_whole_niche():
+    # every cluster gets the same recent-upload boost from sampling → cancels out
+    videos, emb = _cluster(3, [50_000] * 4, 10_000, hours=[10, 20, 40, 200])
+    share = ra.recent_share(videos)                         # 3 of 4 recent
+    [same] = ra.build_trends(videos, emb, [[0, 1, 2, 3]], None, niche_share=share)
+    assert same["relative_growth"] == pytest.approx(1.0)
+    assert not same["checks"]["growing"]
+    [faster] = ra.build_trends(videos, emb, [[0, 1, 2, 3]], None, niche_share=3 / 14)
+    assert faster["checks"]["growing"] and faster["trend_type"] == "trend"
+
+
+def test_relative_growth_shrinks_small_clusters_toward_the_niche():
+    p = 0.6                                                  # recency-biased sample
+    assert ra.relative_growth(3, 0, p) > ra.GROWTH_RATIO_MIN   # all recent → growing
+    assert ra.relative_growth(1, 2, p) < 1                     # mostly old → not
+    assert ra.relative_growth(0, 0, p) == pytest.approx(1.0)   # no data → like the niche
+    assert ra.recent_share([]) == 0.5
+
+
+def test_evergreen_when_spread_but_not_growing():
+    videos, emb = _cluster(3, [50_000] * 4, 10_000, hours=[150, 200, 250, 300])
+    [t] = _types(videos, emb)
+    assert t["trend_type"] == "evergreen"
+    assert t["checks"]["spreading"] and not t["checks"]["growing"]
+    assert t["low_confidence"]
+
+
+def test_emerging_when_growing_and_overperforming_on_two_channels():
+    videos, emb = _cluster(2, [50_000] * 3, 10_000, hours=[5, 10, 20])
+    [t] = _types(videos, emb)
+    assert t["trend_type"] == "emerging"
+
+
+def test_one_off_viral_is_hidden():
+    videos, emb = _cluster(1, [900_000, 5_000], 10_000, hours=[5, 10])
+    assert _types(videos, emb) == []
+
+
+def test_topic_when_spread_and_growing_but_not_overperforming():
+    videos, emb = _cluster(3, [1_000] * 3, 10_000, hours=[5, 10, 20])
+    [t] = _types(videos, emb)
+    assert t["trend_type"] == "topic"
+    assert not t["checks"]["overperforms"]
+
+
+def test_ranking_puts_trend_before_evergreen_even_with_lower_score():
+    trend_v, _ = _cluster(3, [3_000] * 3, 1_000, hours=[5, 10, 20], prefix="a")
+    ever_v, _ = _cluster(4, [900_000] * 4, 1_000, hours=[150, 200, 250, 300], prefix="b")
+    for v in ever_v:
+        v["channel_id"] = "e" + v["channel_id"]
+    videos = trend_v + ever_v
+    ra.score_videos(videos, NOW)
+    emb = np.stack([_unit(1, 0.01 * i, 0) for i in range(3)] +
+                   [_unit(0, 1, 0.01 * i) for i in range(4)])
+    trends = ra.build_trends(videos, emb, [[0, 1, 2], [3, 4, 5, 6]], None)
+    assert [t["trend_type"] for t in trends] == ["trend", "evergreen"]
+
+
+def test_thresholds_can_be_overridden_from_env(monkeypatch):
+    monkeypatch.setenv("TREND_GROWTH_RATIO_MIN", "2.5")
+    assert ra._env_number("GROWTH_RATIO_MIN", 1.3) == 2.5
+    monkeypatch.setenv("TREND_GROWTH_RATIO_MIN", "abc")
+    assert ra._env_number("GROWTH_RATIO_MIN", 1.3) == 1.3
+
+
+def test_youtube_searches_both_windows(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ra, "_search_video_ids",
+                        lambda q, k, now, days: calls.append((q, days)) or [])
+    ra.collect_videos(["a", "b"], "key", NOW)
+    assert calls == [("a", 14), ("a", 3), ("b", 14), ("b", 3)]
+
+
+def test_unknown_source_is_an_error(sample_creator_profile):
+    result = ra.run_research(sample_creator_profile, "x", source="tiktok", now=NOW)
+    assert result["trends"] == [] and "TREND_SOURCE" in result["error"]
+
+
+def test_instagram_without_config_reports_what_is_missing(sample_creator_profile):
+    result = ra.run_research(sample_creator_profile, "x", source="instagram", now=NOW,
+                             ig_config={"access_token": "", "user_id": "", "creators": []})
+    assert "IG_ACCESS_TOKEN" in result["error"] and "IG_CREATORS" in result["error"]
+
+
+def test_node_output_carries_trend_type(monkeypatch, sample_creator_profile):
+    videos, emb = _scored_world()
+    for v in videos[3:]:                       # phone videos are older background
+        v["published_at"] = _iso(250)
+    monkeypatch.setattr(ra, "collect_videos", lambda q, k, now: [dict(v) for v in videos])
+    monkeypatch.setattr(ra, "embed_texts", lambda texts: (
+        np.stack([_unit(1, 0, 0)] * len(texts)) if len(texts) != len(videos) else emb))
+    out = ra.research_agent({"creator_niche": "x", "creator_profile": sample_creator_profile},
+                            run=lambda p, n: ra.run_research(p, n, api_key="k", now=NOW,
+                                                             source="youtube"))
+    ro = out["research_output"]
+    assert ro["trend_type"] == "trend"
+    assert set(ro["trend_checks"]) == {"overperforms", "growing", "spreading", "recent"}

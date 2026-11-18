@@ -1,0 +1,30 @@
+{
+  "_note": "ig_creators is a STARTER list of well-known accounts in each niche. Verify them: personal (non-Business/Creator) accounts are skipped automatically and listed in the summary. 15-30 creators per niche is the target.",
+  "niches": [
+    {
+      "name": "motivation",
+      "profile_path": "module1_style_extraction/creator_profile.json",
+      "ig_creators": [
+        "garyvee", "jayshetty", "melrobbins", "tonyrobbins", "lewishowes",
+        "simonsinek", "robinsharma", "edmylett", "brendonburchard", "davidgoggins",
+        "mattdavella", "aliabdaal", "thedankoe", "jimkwik", "marieforleo"
+      ],
+      "ig_hashtags": ["motivation", "selfimprovement", "personalgrowth", "consistency", "mindset"]
+    },
+    {
+      "name": "fitness_beginners",
+      "profile": {
+        "creator_niche": "Beginner fitness and home workouts",
+        "recurring_topics": ["Home workouts", "Gym beginner mistakes", "Fat loss", "Muscle building", "Workout motivation"],
+        "target_audience": "Young adults starting to work out"
+      },
+      "ig_creators": [
+        "jeffnippard", "athleanx", "jeremyethier", "kayla_itsines", "chloe_t",
+        "blogilates", "whitneyysimmons", "sam_sulek", "chrisheria", "mikethurston",
+        "thebodycoach", "demibagby", "krissycela", "mrandmrsmuscle", "heatherrobertsoncom",
+        "pamela_rf"
+      ],
+      "ig_hashtags": ["homeworkout", "fitnesstips", "gymbeginner", "fatloss", "workoutmotivation"]
+    }
+  ]
+}

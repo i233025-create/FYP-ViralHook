@@ -111,7 +111,11 @@ class PipelineState(TypedDict):
     # {
     #   "topic": str,                      # top trend (read by ScriptingAgent)
     #   "trend_score": float,              # 0-1, measured — never LLM-made
-    #   "trend_signals": {"velocity": float, "engagement_rate": float, "outlier": float},
+    #   "trend_signals": {"velocity": float, "engagement_rate": float, "outlier": float,
+    #                     "growth_ratio": float},
+    #   "trend_type": "trend" | "emerging" | "evergreen" | "topic",
+    #   "trend_checks": {"overperforms": bool, "growing": bool,
+    #                    "spreading": bool, "recent": bool},
     #   "creator_fit": float,              # cosine vs recurring_topics
     #   "why_trending": str, "suggested_angle": str,
     #   "niche": str,
@@ -121,7 +125,7 @@ class PipelineState(TypedDict):
     #   ],
     #   "related_keywords": [str],         # search queries used
     #   "cluster_size": int, "low_confidence": bool,
-    #   "source": "youtube_data_api" | "profile_fallback",
+    #   "source": "youtube_data_api" | "instagram_graph_api" | "profile_fallback",
     #   "trends": [ ...all ranked trends with full evidence... ]
     # }
     research_error: Optional[str]
