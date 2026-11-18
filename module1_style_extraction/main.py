@@ -66,6 +66,10 @@ from config import (
     API_CALL_DELAY,
     RAG_TOP_K,
     MAX_JSON_RETRIES,
+    NATIVE_TRANSCRIPT,
+    NATIVE_LANGUAGES,
+    NATIVE_WHISPER_MODEL,
+    ROMANIZE_MODEL,
 )
 import transcriber
 from transcriber import process_video, process_local_video, get_local_videos
@@ -201,6 +205,46 @@ def print_video_summary(profile: dict, video_index: int) -> None:
     console.print()
 
 
+def _native_whisper_model() -> str:
+    if NATIVE_WHISPER_MODEL != "auto":
+        return NATIVE_WHISPER_MODEL
+    try:
+        import torch
+        return "large-v3" if torch.cuda.is_available() else "medium"
+    except Exception:
+        return "medium"
+
+
+def native_transcripts(source: str, transcript_en: str, spoken_language: str,
+                       is_local_file: bool) -> tuple[str, str]:
+    """
+    Urdu-script and Roman Urdu transcripts of one video, for the creator's style
+    (see config.NATIVE_TRANSCRIPT). ("", "") when the creator spoke English, the
+    feature is off, the source is a URL (the audio is already deleted), or a
+    step fails — the pipeline then works on the English transcript as before.
+    """
+    if not (NATIVE_TRANSCRIPT and is_local_file and transcript_en
+            and spoken_language in NATIVE_LANGUAGES):
+        return "", ""
+    from pipeline.urdu_style import RomanizeError, romanize
+
+    model_size = _native_whisper_model()
+    console.print(f"  [cyan]🗣 Urdu pass[/cyan] (spoken: {spoken_language}, Whisper {model_size})")
+    try:
+        transcript_ur = transcriber.transcribe_audio(source, model_size, language="ur", task="transcribe")
+    except (RuntimeError, FileNotFoundError) as e:
+        console.print(f"  [yellow]⚠ Urdu transcription failed — English only: {e}[/yellow]")
+        return "", ""
+    try:
+        transcript_roman = romanize(transcript_ur, transcript_en, model=ROMANIZE_MODEL)
+    except RomanizeError as e:
+        console.print(f"  [yellow]⚠ Roman Urdu conversion failed — keeping Urdu script only: {e}[/yellow]")
+        return transcript_ur, ""
+    preview = transcript_roman[:120].replace("\n", " ")
+    console.print(f"  [dim]Roman Urdu: \"{preview}{'...' if len(transcript_roman) > 120 else ''}\"[/dim]")
+    return transcript_ur, transcript_roman
+
+
 def main() -> None:
     """
     Main orchestration function — runs the full pipeline end-to-end.
@@ -303,6 +347,12 @@ def main() -> None:
             console.print("  [yellow]  Skipping this video...[/yellow]")
             continue
 
+        # ── STAGE 1b: Native (Urdu / Urdu–English) transcript for style ───────
+        spoken_language = transcriber.last_language
+        transcript_ur, transcript_roman = native_transcripts(
+            source, transcript, spoken_language, INPUT_MODE == "local")
+        transcriber.last_language = spoken_language   # the Urdu pass overwrote it
+
         # Show a quick transcript preview for sanity-checking
         preview = transcript[:120].replace("\n", " ")
         if len(transcript) > 120:
@@ -338,7 +388,8 @@ def main() -> None:
 
         try:
             store_video_profile(vector_store, profile, idx, transcript=transcript,
-                                language=transcriber.last_language)
+                                language=transcriber.last_language,
+                                transcript_ur=transcript_ur, transcript_roman=transcript_roman)
         except Exception as e:
             console.print(f"  [red]✗ ChromaDB storage failed: {e}[/red]")
 

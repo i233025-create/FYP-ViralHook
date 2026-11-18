@@ -11,11 +11,16 @@ Flow:
                   (30 s × creator's words-per-minute).
   [2] Retrieve    multilingual-e5-small (chosen by E1): topic → 3 most similar
                   past transcripts (any spoken language, English text), shown to
-                  the LLM as "this is how this creator talks".
+                  the LLM as "this is how this creator talks". For Urdu-speaking
+                  creators the LLM sees the ROMAN URDU transcript of those reels
+                  (their own words) instead of the English translation, plus a
+                  measured style card: Urdu–English mix, catchphrases, openers
+                  (pipeline/urdu_style.py). Retrieval itself stays on English.
   [3] Generate    LLM (local Ollama by default) in JSON mode → 5 scenes.
                   Pydantic-validated; one repair retry if unusable.
   [4] Evaluate    style_match   stylometrics vs the creator's transcripts
-                                (sentence length, "you"-address, questions)
+                                (sentence length, "you"-address, questions,
+                                and — Urdu speakers — share of English words)
                   timing        spoken words vs the 30-second word budget
                   structure     5 scenes, ordered timecodes, ends ~0:30,
                                 real hook, short captions, no near-empty scenes,
@@ -65,6 +70,7 @@ from pipeline.state import PipelineState, ScriptingOutput, ScriptOutput, SceneOu
 from pipeline.local_llm import LocalLLMError, chat_json  # noqa: E402
 from pipeline.embeddings import embed_for_retrieval  # noqa: E402
 from pipeline.creator_paths import CreatorPaths  # noqa: E402
+from pipeline import urdu_style  # noqa: E402
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 CHROMA_PERSIST_DIR = ROOT / "module1_style_extraction" / "chroma_db"
@@ -111,7 +117,12 @@ MAX_REGEN_ATTEMPTS = 2
 STYLE_FEEDBACK_BELOW = 0.7   # per-feature closeness that triggers feedback
 
 METRICS = ("style_match", "timing", "structure", "hook_strength")
-YOU_WORDS = {"you", "your", "you're", "youre", "yours", "yourself", "yourselves"}
+YOU_WORDS = {"you", "your", "you're", "youre", "yours", "yourself", "yourselves",
+             # Roman Urdu second person (aap / tum / tu forms)
+             "aap", "ap", "aapka", "apka", "aapki", "apki", "aapke", "apke", "aapko", "apko",
+             "tum", "tumhe", "tumhein", "tumhara", "tumhari", "tumhare", "tumko",
+             "tu", "tera", "teri", "tere", "tujhe"}
+MIN_ROMAN_REELS = 2          # Roman Urdu transcripts needed before the style card is used
 
 
 # ─── [1] Creator Context ───────────────────────────────────────────────────────
@@ -165,6 +176,8 @@ def load_creator_examples(paths: CreatorPaths | None = None) -> list[dict]:
                 "key_phrases": _json_list(meta.get("key_phrases")),
                 "transcript": transcript.strip(),
                 "language": (meta.get("language") or "").lower(),   # Whisper-detected; "" if unknown
+                # Creator's own words in Roman Urdu (Module 1 Urdu pass); "" if none
+                "transcript_roman": (meta.get("transcript_roman") or "").strip(),
             })
     if metadatas and not examples:
         print("[ScriptingAgent] ChromaDB has no transcripts — re-run Module 1 to store them")
@@ -215,8 +228,17 @@ def style_features(text: str) -> dict:
     }
 
 
+def style_text(example: dict) -> str:
+    """The creator's own words: Roman Urdu transcript if there is one, else the English one."""
+    return example.get("transcript_roman") or example["transcript"]
+
+
 def build_style_baseline(examples: list[dict], multimodal: dict) -> dict:
-    """What the creator sounds like, measured from their transcripts."""
+    """
+    What the creator sounds like, measured from their transcripts (their own
+    words: Roman Urdu where available). With enough Roman Urdu transcripts the
+    baseline also carries the urdu_style card (English share, catchphrases...).
+    """
     wpm = multimodal.get("speech_rate_wpm")
     baseline = {
         "wpm": round(wpm or DEFAULT_WPM),
@@ -226,21 +248,47 @@ def build_style_baseline(examples: list[dict], multimodal: dict) -> dict:
         "avg_shot_duration": multimodal.get("avg_shot_duration"),
         "measured_style": bool(examples),
         "transcripts": len(examples),
-        "baseline_words": sum(len(_words(e["transcript"])) for e in examples),
+        "baseline_words": sum(len(_words(style_text(e))) for e in examples),
     }
     baseline["low_confidence"] = baseline["baseline_words"] < MIN_BASELINE_WORDS
     if examples:
-        baseline.update(style_features(" ".join(e["transcript"] for e in examples)))
+        baseline.update(style_features(" ".join(style_text(e) for e in examples)))
+        baseline["sentence_source"] = "creator_words"
+        if baseline["avg_sentence_words"] > urdu_style.MAX_SENTENCE_WORDS:
+            # Whisper's Urdu (→ Roman) transcripts have no punctuation: sentence
+            # length and questions come from the punctuated English transcripts.
+            english = style_features(" ".join(e["transcript"] for e in examples))
+            baseline.update(avg_sentence_words=english["avg_sentence_words"],
+                            question_ratio=english["question_ratio"],
+                            sentence_source="english_transcript")
+
+    roman = [e for e in examples if e.get("transcript_roman")]
+    baseline["roman_transcripts"] = len(roman)
+    if len(roman) >= MIN_ROMAN_REELS:
+        card = urdu_style.style_card([e["transcript_roman"] for e in roman],
+                                     [e["transcript"] for e in roman])
+        lexicon = urdu_style.build_lexicon([e["transcript_roman"] for e in roman],
+                                           [e["transcript"] for e in roman])
+        # Reels the creator spoke in English count as all-English
+        english_words = sum(len(_words(e["transcript"])) for e in examples if not e.get("transcript_roman"))
+        if english_words:
+            card["english_ratio"] = round((card["english_ratio"] * card["words"] + english_words)
+                                          / (card["words"] + english_words), 3)
+        baseline.update({"urdu_style": card, "english_ratio": card["english_ratio"],
+                         "_lexicon": lexicon})
     return baseline
 
 
 def usable_for_style(example: dict) -> bool:
     """
-    A transcript represents the creator's own phrasing only if it was spoken
-    in English (Whisper's translation of e.g. a Hindi vlog is machine wording)
-    and is long enough to show sentence patterns. Unknown language (ChromaDB
-    built before languages were stored) is kept.
+    A transcript represents the creator's own phrasing if it is their Roman
+    Urdu transcript, or if it was spoken in English (Whisper's English
+    translation of an Urdu vlog is machine wording), and it is long enough to
+    show sentence patterns. Unknown language (ChromaDB built before languages
+    were stored) is kept.
     """
+    if example.get("transcript_roman"):
+        return len(_words(example["transcript_roman"])) >= MIN_TRANSCRIPT_WORDS
     language = example.get("language", "")
     return (len(_words(example["transcript"])) >= MIN_TRANSCRIPT_WORDS
             and (not language or language == STYLE_LANGUAGE))
@@ -260,7 +308,8 @@ def prepare_context(profile: dict | None = None, paths: CreatorPaths | None = No
     baseline = build_style_baseline(examples, load_multimodal_stats(paths))
     baseline["transcripts_excluded"] = len(all_examples) - len(examples)
     print(f"[ScriptingAgent] Context: {len(examples)} usable transcripts "
-          f"({baseline['transcripts_excluded']} excluded: non-English or too short), "
+          f"({baseline['roman_transcripts']} Roman Urdu, "
+          f"{baseline['transcripts_excluded']} excluded: translated or too short), "
           f"{len(retrieval_pool)} searchable for examples, "
           f"{baseline['baseline_words']} words{' — LOW CONFIDENCE' if baseline['low_confidence'] else ''}, "
           f"{baseline['wpm']} wpm ({baseline['wpm_source']}), budget {baseline['word_budget']} words")
@@ -362,6 +411,8 @@ def _creator_context(profile: dict, baseline: dict, examples: list[dict]) -> str
              f"(this creator speaks ~{baseline['wpm']} words per minute; 30 seconds)."]
     if baseline.get("measured_style"):
         parts.append(_style_targets(baseline))
+    if baseline.get("urdu_style"):
+        parts.append(urdu_style.card_prompt(baseline["urdu_style"]))
     if baseline.get("talking_head_pct") is not None:
         shot = baseline.get("avg_shot_duration")
         parts.append(f"VISUAL STYLE: {baseline['talking_head_pct']:.0%} talking head"
@@ -369,7 +420,7 @@ def _creator_context(profile: dict, baseline: dict, examples: list[dict]) -> str
                      + " — write clip_ideas to match.")
     if examples:
         shots = "\n\n".join(
-            f"--- Example {i} (topic: {e['topic']}) ---\n{e['transcript'][:EXAMPLE_MAX_CHARS]}"
+            f"--- Example {i} (topic: {e['topic']}) ---\n{style_text(e)[:EXAMPLE_MAX_CHARS]}"
             for i, e in enumerate(examples, 1))
         parts.append("HOW THIS CREATOR ACTUALLY TALKS (real transcripts — copy the voice: "
                      f"sentence length, phrasing, energy; NOT the content):\n{shots}")
@@ -382,16 +433,19 @@ SCENE_SLOTS = [(0, 3, "hook"), (3, 9, "setup"), (9, 16, "main point"),
                (16, 23, "example or proof"), (23, 30, "takeaway")]
 
 
-def _output_spec(wpm: int) -> str:
+def _output_spec(wpm: int, opener: str = "") -> str:
     """JSON skeleton with fixed timecodes and per-scene word targets."""
     scenes = []
     for start, end, role in SCENE_SLOTS:
         words = max(4, round((end - start) * wpm / 60))
+        note = f"about {words} spoken words"
         if role == "hook":
-            words = min(words, MAX_HOOK_WORDS)
+            words = min(max(words, MIN_HOOK_WORDS + 2), MAX_HOOK_WORDS)
+            note = (f'the greeting "{opener}", then a hook sentence of about {words} words' if opener
+                    else f"about {words} spoken words")
         scenes.append(
             f'    {{"timecode": "0:{start:02d}-0:{end:02d}", "clip_idea": "...", '
-            f'"caption": "...", "voiceover": "..."}}   <- {role}: about {words} spoken words')
+            f'"caption": "...", "voiceover": "..."}}   <- {role}: {note}')
     return (
         f"Fill in this JSON skeleton. Keep all {SCENE_COUNT} scenes and their timecodes exactly; "
         "replace every ... with real content.\n"
@@ -422,7 +476,9 @@ def build_prompt(mode: str, topic: str, hook_type: str, structure: str, profile:
                    + "\n".join(f"- {f}" for f in feedback) + "\n\n")
     # The baseline mode only knows "30 seconds" (generic speech rate); the
     # other modes get the creator's measured words-per-minute.
-    return prompt + _output_spec(DEFAULT_WPM if mode == "no_history" else baseline["wpm"])
+    if mode == "no_history":
+        return prompt + _output_spec(DEFAULT_WPM)
+    return prompt + _output_spec(baseline["wpm"], urdu_style.opener_phrase(baseline.get("urdu_style")))
 
 
 def _clean_spoken(text: str) -> str:
@@ -508,6 +564,12 @@ def score_style(text: str, baseline: dict) -> tuple[float | None, list[str], dic
         "you": _closeness(features["you_ratio"], b_you, max(b_you, 0.03)),
         "questions": _closeness(features["question_ratio"], b_q, max(b_q, 0.15)),
     }
+    if baseline.get("english_ratio") is not None:
+        # Urdu–English mix: the script should be as English as the creator is
+        b_en = baseline["english_ratio"]
+        features["english_ratio"] = urdu_style.english_ratio(
+            text, baseline.get("_lexicon") or urdu_style.ROMAN_URDU_COMMON)
+        closeness["english"] = _closeness(features["english_ratio"], b_en, 0.3)
     feedback = []
     if closeness["length"] < STYLE_FEEDBACK_BELOW:
         direction = "shorter" if features["avg_sentence_words"] > b_len else "longer"
@@ -519,6 +581,11 @@ def score_style(text: str, baseline: dict) -> tuple[float | None, list[str], dic
     if closeness["questions"] < STYLE_FEEDBACK_BELOW:
         feedback.append(f"{features['question_ratio']:.0%} of sentences are questions vs {b_q:.0%} "
                         "for this creator.")
+    if closeness.get("english", 1.0) < STYLE_FEEDBACK_BELOW:
+        more = "Urdu" if features["english_ratio"] > baseline["english_ratio"] else "English"
+        feedback.append(f"{features['english_ratio']:.0%} of the words are English vs "
+                        f"{baseline['english_ratio']:.0%} when this creator talks. Use more {more} "
+                        "(Roman Urdu, Latin letters).")
     return round(10 * statistics.mean(closeness.values()), 1), feedback, features
 
 
@@ -546,14 +613,20 @@ def _ngrams(words: list[str], n: int) -> set[tuple[str, ...]]:
     return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
 
 
-def copied_phrases(text: str, transcripts: list[str]) -> list[str]:
-    """COPY_NGRAM-word runs of `text` that appear verbatim in a past transcript."""
+def copied_phrases(text: str, transcripts: list[str], allowed: list[str] | None = None) -> list[str]:
+    """
+    COPY_NGRAM-word runs of `text` that appear verbatim in a past transcript.
+    Runs inside one of the `allowed` phrases (the creator's catchphrases, which
+    the prompt asks for) are not copying.
+    """
     source: set[tuple[str, ...]] = set()
     for t in transcripts:
         source |= _ngrams([w.lower() for w in _words(t)], COPY_NGRAM)
     words = [w.lower() for w in _words(text)]
-    return [" ".join(words[i:i + COPY_NGRAM]) for i in range(len(words) - COPY_NGRAM + 1)
+    allowed_text = [" ".join(w.lower() for w in _words(a)) for a in allowed or []]
+    runs = [" ".join(words[i:i + COPY_NGRAM]) for i in range(len(words) - COPY_NGRAM + 1)
             if tuple(words[i:i + COPY_NGRAM]) in source]
+    return [r for r in runs if not any(r in a for a in allowed_text)]
 
 
 def repeated_scenes(scenes: list[SceneOutput]) -> list[int]:
@@ -569,7 +642,14 @@ def repeated_scenes(scenes: list[SceneOutput]) -> list[int]:
     return repeats
 
 
-def score_structure(script: ScriptOutput, transcripts: list[str] | None = None) -> tuple[float, list[str]]:
+def hook_line(script: ScriptOutput, opener: str = "") -> str:
+    """Scene 1's voiceover without the creator's greeting: the hook itself."""
+    hook = script.scenes[0].voiceover if script.scenes else ""
+    return urdu_style.strip_opener(hook, opener) if opener else hook
+
+
+def score_structure(script: ScriptOutput, transcripts: list[str] | None = None,
+                    allowed: list[str] | None = None, opener: str = "") -> tuple[float, list[str]]:
     """
     Eight pass/fail checks → 0-10: format (scenes, timecodes, length of hook,
     captions, scenes) plus originality — no scene repeating another and no
@@ -578,7 +658,7 @@ def score_structure(script: ScriptOutput, transcripts: list[str] | None = None) 
     """
     scenes = script.scenes
     spans = [_parse_timecode(s.timecode) for s in scenes]
-    hook_words = len(_words(scenes[0].voiceover)) if scenes else 0
+    hook_words = len(_words(hook_line(script, opener)))     # the greeting does not count
     long_captions = [s.caption for s in scenes if len(_words(s.caption)) > MAX_CAPTION_WORDS]
     thin_scenes = [i for i, s in enumerate(scenes, 1) if len(_words(s.voiceover)) < MIN_SCENE_WORDS]
     ordered = (bool(spans) and all(spans)
@@ -586,7 +666,7 @@ def score_structure(script: ScriptOutput, transcripts: list[str] | None = None) 
                and all(a[0] <= b[0] for a, b in zip(spans, spans[1:])))
     ends_at = spans[-1][1] if spans and spans[-1] else 0
     repeats = repeated_scenes(scenes)
-    copied = copied_phrases(" ".join(s.voiceover for s in scenes), transcripts or [])
+    copied = copied_phrases(" ".join(s.voiceover for s in scenes), transcripts or [], allowed)
 
     checks = [
         (len(scenes) == SCENE_COUNT, f"Use exactly {SCENE_COUNT} scenes (got {len(scenes)})."),
@@ -689,6 +769,11 @@ def judge_hook(hook: str, hook_type: str, topic: str) -> tuple[float | None, lis
     return score, ([f"Hook: {improve}"] if useful and score < 10 else [])
 
 
+def _end_sentence(text: str) -> str:
+    text = text.strip()
+    return text if not text or text[-1] in ".!?" else text + "."
+
+
 def evaluate_script(script: ScriptOutput, baseline: dict, topic: str,
                     transcripts: list[str] | None = None) -> dict:
     """
@@ -700,11 +785,16 @@ def evaluate_script(script: ScriptOutput, baseline: dict, topic: str,
 
     # Style is measured on the body (scenes 2+): the hook's form is set by the
     # requested hook type (a Curiosity Gap is often a question), not by voice.
-    body = " ".join(s.voiceover for s in script.scenes[1:]) or voiceover
+    # A scene's voiceover ends a sentence even when the LLM left out the full stop.
+    body = " ".join(_end_sentence(s.voiceover) for s in script.scenes[1:]) or voiceover
     style, style_fb, features = score_style(body, baseline)
     timing, timing_fb = score_timing(word_count, baseline["word_budget"], baseline["wpm"])
-    structure, structure_fb = score_structure(script, transcripts)
-    hook = script.scenes[0].voiceover if script.scenes else ""
+    # The prompt asks for the creator's catchphrases, opener and sign-off: saying them is not copying
+    card = baseline.get("urdu_style") or {}
+    catchphrases = [c["phrase"] for key in ("catchphrases", "openers", "closers") for c in card.get(key, [])]
+    opener = urdu_style.opener_phrase(card)
+    structure, structure_fb = score_structure(script, transcripts, catchphrases, opener)
+    hook = hook_line(script, opener)      # judged without the creator's greeting
     hook_strength, hook_fb = judge_hook(hook, script.hook_type, topic)
 
     available = [s for s in (style, timing, structure, hook_strength) if s is not None]
@@ -715,7 +805,8 @@ def evaluate_script(script: ScriptOutput, baseline: dict, topic: str,
         "hook_strength": hook_strength,
         "overall": round(statistics.mean(available), 2),
         # Copied or repeated content never passes, whatever the overall score
-        "original": not (repeated_scenes(script.scenes) or copied_phrases(voiceover, transcripts or [])),
+        "original": not (repeated_scenes(script.scenes)
+                         or copied_phrases(voiceover, transcripts or [], catchphrases)),
         "feedback": timing_fb + structure_fb + style_fb + hook_fb,
         "measured": {"word_count": word_count, **{k: round(v, 3) for k, v in features.items()}},
     }
@@ -737,7 +828,9 @@ def run_mode(mode: str, topic: str, context: dict, examples: list[dict], hook_ty
     profile, baseline = context["profile"], context["baseline"]
     structure = _extract_style_params(profile)["structure"]
     shots = examples if mode != "no_history" else []
-    transcripts = [e["transcript"] for e in context.get("retrieval_pool", context["examples"])]
+    pool = context.get("retrieval_pool", context["examples"])
+    transcripts = [e["transcript"] for e in pool] + [e["transcript_roman"] for e in pool
+                                                     if e.get("transcript_roman")]
 
     def attempt(feedback=None, previous=None) -> tuple[ScriptOutput, dict]:
         prompt = build_prompt(mode, topic, hook_type, structure, profile, baseline, shots,
@@ -781,7 +874,8 @@ def run_mode(mode: str, topic: str, context: dict, examples: list[dict], hook_ty
         "examples_used": len(shots),
         "baseline": {k: v for k, v in baseline.items()
                      if k in ("wpm", "wpm_source", "word_budget", "measured_style", "transcripts",
-                              "transcripts_excluded", "baseline_words", "low_confidence")},
+                              "transcripts_excluded", "baseline_words", "low_confidence",
+                              "roman_transcripts", "english_ratio", "urdu_style")},
     }
 
 

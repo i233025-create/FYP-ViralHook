@@ -41,6 +41,23 @@ WHISPER_LANGUAGE: str = "en"
 # E1 used "transcribe" with language="en"; keep the two together.
 WHISPER_TASK: str = "transcribe"
 
+# ─── Native (Urdu / Urdu–English) transcript for STYLE ────────────────────────
+# The English transcript above is for retrieval (E1). For creators who speak
+# Urdu (Whisper labels Pakistani Urdu–English speech "hi" or "ur"), a second
+# Whisper pass with language="ur" keeps their own words, and a local LLM turns
+# the Urdu script into Roman Urdu with English words in English
+# (pipeline/urdu_style.py). The Scripting Agent shows the LLM these Roman
+# transcripts and measures the creator's Urdu–English mix and catchphrases.
+#   NATIVE_TRANSCRIPT=0        turn it off (English-only, as before)
+#   NATIVE_WHISPER_MODEL=...   Whisper size for the Urdu pass; "auto" = large-v3
+#                              on a GPU, medium on CPU (small/base are poor at Urdu)
+#   ROMANIZE_MODEL=...         Ollama model for Urdu → Roman Urdu (default:
+#                              OLLAMA_MODEL); a 7B+ model is much better at Urdu
+NATIVE_TRANSCRIPT: bool = os.getenv("NATIVE_TRANSCRIPT", "1") != "0"
+NATIVE_LANGUAGES: frozenset = frozenset({"ur", "hi", "pa"})
+NATIVE_WHISPER_MODEL: str = os.getenv("NATIVE_WHISPER_MODEL", "auto")
+ROMANIZE_MODEL: str | None = os.getenv("ROMANIZE_MODEL") or None
+
 # Sentence-Transformers model for generating text embeddings.
 # "all-MiniLM-L6-v2" is a compact (~90 MB) but high-quality model that
 # produces 384-dimensional embeddings. Runs on CPU without GPU.

@@ -23,6 +23,7 @@ Usage:
   python prepare_data.py                                  # all creators, Whisper small
   python prepare_data.py --creators hashaam --limit 3     # check Whisper output on 3 reels first
   python prepare_data.py --creators hashaam --model medium --language ur
+  python prepare_data.py --model large-v3-turbo --language ur --out transcripts_turbo_ur.json
 """
 
 from __future__ import annotations
@@ -64,8 +65,9 @@ def load_whisper(model_size: str):
     return WhisperModel(model_size, device=device, compute_type=compute)
 
 
-def transcribe(model, video: Path, language: str | None) -> dict:
-    segments, info = model.transcribe(str(video), language=language, vad_filter=True, beam_size=5)
+def transcribe(model, video: Path, language: str | None, initial_prompt: str | None = None) -> dict:
+    segments, info = model.transcribe(str(video), language=language, vad_filter=True, beam_size=5,
+                                      initial_prompt=initial_prompt)
     text = " ".join(s.text.strip() for s in segments).strip()
     return {
         "text": text,
@@ -76,7 +78,8 @@ def transcribe(model, video: Path, language: str | None) -> dict:
 
 
 def prepare_creator(creator_dir: Path, model_size: str, language: str | None,
-                    limit: int | None, force: bool, get_model, out_name: str = TRANSCRIPTS_FILE) -> None:
+                    limit: int | None, force: bool, get_model, out_name: str = TRANSCRIPTS_FILE,
+                    initial_prompt: str | None = None) -> None:
     rows = read_captions(creator_dir)
     out_path = creator_dir / out_name
     done = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else {}
@@ -84,7 +87,9 @@ def prepare_creator(creator_dir: Path, model_size: str, language: str | None,
     todo = []
     for row in rows[:limit] if limit else rows:
         prev = done.get(row["file"])
-        stale = prev is None or prev.get("whisper_model") != model_size or prev.get("forced_language") != language
+        stale = (prev is None or prev.get("whisper_model") != model_size
+                 or prev.get("forced_language") != language
+                 or prev.get("initial_prompt") != initial_prompt)
         if force or stale:
             todo.append(row)
     print(f"\n[prepare] {creator_dir.name}: {len(rows)} reels in captions.csv, {len(todo)} to transcribe")
@@ -97,14 +102,15 @@ def prepare_creator(creator_dir: Path, model_size: str, language: str | None,
         started = time.time()
         model = get_model()  # outside the try: a model that fails to load must stop the run
         try:
-            result = transcribe(model, video, language)
+            result = transcribe(model, video, language, initial_prompt)
         except Exception as exc:
             # e.g. a reel with no audio track (PyAV IndexError): record it as
             # no speech so run_e1 excludes it and later runs don't retry it.
             result = {"text": "", "language": None, "language_prob": 0.0,
                       "script": detect_script(""), "error": f"{type(exc).__name__}: {exc}"}
             print(f"  [{i}/{len(todo)}] {row['file']}: NO AUDIO / unreadable ({result['error'][:60]}) — saved as no speech")
-        result.update({"whisper_model": model_size, "forced_language": language})
+        result.update({"whisper_model": model_size, "forced_language": language,
+                       "initial_prompt": initial_prompt})
         done[row["file"]] = result
         # Save after every file so an interrupted run keeps its progress.
         out_path.write_text(json.dumps(done, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -121,6 +127,9 @@ def main():
     parser.add_argument("--language", default=None, help="force a language code (e.g. en, ur); default auto-detect")
     parser.add_argument("--limit", type=int, default=None, help="only the first N reels per creator")
     parser.add_argument("--force", action="store_true", help="re-transcribe even if cached")
+    parser.add_argument("--initial-prompt", default=None,
+                        help="Whisper initial prompt, e.g. Roman Urdu text to steer it to write Roman "
+                             "Urdu (experiment E4)")
     parser.add_argument("--out", default=TRANSCRIPTS_FILE,
                         help="transcripts file name, to keep several Whisper settings side by side "
                              "(e.g. transcripts_medium_en.json); run_e1.py --transcripts reads it")
@@ -143,7 +152,8 @@ def main():
         return model
 
     for creator_dir in creator_dirs:
-        prepare_creator(creator_dir, args.model, args.language, args.limit, args.force, get_model, args.out)
+        prepare_creator(creator_dir, args.model, args.language, args.limit, args.force, get_model, args.out,
+                        args.initial_prompt)
 
 
 if __name__ == "__main__":

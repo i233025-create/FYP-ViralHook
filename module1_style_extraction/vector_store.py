@@ -156,6 +156,8 @@ def store_video_profile(
     video_index: int,
     transcript: str = "",
     language: str = "",
+    transcript_ur: str = "",
+    transcript_roman: str = "",
 ) -> None:
     """
     Store a per-video profile as a vector-embedded document in ChromaDB.
@@ -175,6 +177,9 @@ def store_video_profile(
         video_index:  1-based index used as the document ID and in metadata.
         transcript:   Raw transcript text for this video.
         language:     Spoken language Whisper detected (e.g. "en", "hi").
+        transcript_ur:    Urdu-script transcript (Whisper language="ur"), "" if none.
+        transcript_roman: Roman Urdu version of it — the creator's own words,
+                          used for style (pipeline/urdu_style.py), "" if none.
     """
     # Convert the profile dict to human-readable text for embedding.
     document_text = _profile_to_document_text(profile, video_index)
@@ -192,6 +197,8 @@ def store_video_profile(
         "key_phrases": json.dumps(profile.get("key_phrases", []), ensure_ascii=False),
         "transcript": transcript,
         "language": language,
+        "transcript_ur": transcript_ur,
+        "transcript_roman": transcript_roman,
     }
 
     # Use a deterministic document ID so that re-running the pipeline

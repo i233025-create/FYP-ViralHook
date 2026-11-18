@@ -27,7 +27,8 @@ from rich.console import Console
 # Loading Whisper reads ~75 MB from disk and initialises PyTorch layers —
 # doing this ONCE and reusing it is critical for performance when processing
 # multiple videos in a loop.
-_whisper_model = None
+_whisper_model = None      # model used by the most recent transcribe_audio() call
+_whisper_models: dict = {}  # size → loaded model (English pass + Urdu pass may use different sizes)
 
 # Spoken language Whisper detected in the most recent transcribe_audio() call
 # (ISO code, e.g. "en", "hi"). With language="en" (or task="translate") the
@@ -161,13 +162,14 @@ def transcribe_audio(audio_path: str, model_size: str = "tiny", language: str = 
     # Only load the Whisper model on the first call in a session.
     # This "lazy loading" pattern avoids reloading ~75 MB of model weights
     # on every call — a significant performance win across multiple videos.
-    if _whisper_model is None:
+    if model_size not in _whisper_models:
         console.print(
             f"\n  [yellow]⚙ Loading Whisper '{model_size}' model...[/yellow] "
-            "(first run downloads ~75MB, then cached permanently)"
+            "(first run downloads the weights, then cached permanently)"
         )
-        _whisper_model = whisper.load_model(model_size)
-        console.print(f"  [green]✓ Whisper model loaded[/green]")
+        _whisper_models[model_size] = whisper.load_model(model_size)
+        console.print("  [green]✓ Whisper model loaded[/green]")
+    _whisper_model = _whisper_models[model_size]
 
     console.print(f"  [cyan]🎙 Transcribing:[/cyan] {os.path.basename(audio_path)}")
     start_time = time.time()

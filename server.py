@@ -278,7 +278,7 @@ def get_creator_profile(handle: str = "", niche: str = "", ws: Workspace = Depen
 MODULE1_DIR = ROOT / "module1_style_extraction"
 MODULE2_DIR = ROOT / "module2_multimodal_rag"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
-MAX_UPLOAD_VIDEOS = 10
+MAX_UPLOAD_VIDEOS = int(os.getenv("MAX_UPLOAD_VIDEOS", "10"))  # per upload; env override for experiments
 
 PROFILE_STEPS = [
     {"id": 1, "label": "Uploading videos"},
