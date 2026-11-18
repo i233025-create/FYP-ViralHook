@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { Lightbulb, TrendingUp, ChevronRight, Search, Zap } from 'lucide-react'
+import { ArrowRight, ArrowLeft, RefreshCw, ChevronDown, Clock, PenLine, BarChart3, Radar } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { fetchTrendingTopics } from '../../services/api'
-import { Btn, Card, Badge, ProgressSteps, SectionHeader, Page, Alert, Textarea } from '../../components/ui'
+import { Btn, Card, Badge, Page, PageHero, Alert, Textarea, SectionTitle, scoreTone } from '../../components/ui'
+import JobProgress from '../../components/JobProgress'
+import { Stagger, StaggerItem } from '../../components/motion'
+import { IdeaInputPreview, OptionCard, OptionGrid, TrendListPreview } from '../../components/previews'
 
 const RESEARCH_STEPS = [
   { id: 1, label: 'Analysing recent trends' },
@@ -32,7 +35,7 @@ export default function IdeationScreen() {
         onStep: (step) => setResearchStep(step.id - 1),
       })
       setTopics(t)
-      setTrendingTopics(t)   // save to context so TopicSelectScreen can use them
+      setTrendingTopics(t)
     } catch (err) {
       setResearchError(err?.message || 'Research failed. Check that the backend is running.')
     }
@@ -45,170 +48,180 @@ export default function IdeationScreen() {
   }
 
   const submitOwn = () => {
-    if (!ownIdea.trim()) { setOwnError('Please enter your idea first.'); return }
+    if (!ownIdea.trim()) { setOwnError('Write your idea first.'); return }
     setSelectedTopic({
       id: 'own_' + Date.now(),
       topic: ownIdea.trim(),
       trendScore: null,
       creatorFit: null,
       signals: [],
-      whyThis: 'Your own idea — personalised script generation will still apply your creator style.',
+      whyThis: 'Your own idea — scripts are still written in your style.',
       isOwn: true,
     })
     navigate('topic-select')
   }
 
+  const back = () => { setPath(null); setTopics([]); setResearching(false); setResearchError('') }
+
   return (
-    <Page>
-      <div className="max-w-2xl mx-auto">
-        <SectionHeader
-          icon={Lightbulb}
-          title="Ideation"
-          subtitle="Choose how you want to find your next content topic."
-        />
+    <Page art="ideation">
+      <PageHero
+        step="01"
+        label="Ideation"
+        title={["What's", 'Next?']}
+        lead={`Bring your own idea or let the research agent find what's working in ${creatorProfile?.niche || 'your niche'} right now — measured on real videos from the last 14 days.`}
+      />
 
-        {/* Path selection */}
-        {!path && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
-            <Card
-              hoverable
-              onClick={() => setPath('own')}
-              className="p-6"
-            >
-              <div className="w-10 h-10 rounded-xl bg-discord-blurple/15 flex items-center justify-center mb-4">
-                <Lightbulb size={20} className="text-discord-blurple" />
-              </div>
-              <h3 className="text-discord-white font-bold text-base mb-1">I have my own idea</h3>
-              <p className="text-discord-muted text-sm">Enter your topic and we'll generate creator-personalised scripts around it.</p>
-              <div className="flex items-center gap-1 text-discord-blurple text-sm font-semibold mt-4">
-                Use my idea <ChevronRight size={16} />
-              </div>
-            </Card>
+      {!path && (
+        <OptionGrid>
+          <OptionCard
+            number="01"
+            kicker="Seconds"
+            title="I have my own idea"
+            line="Write your topic; scripts are written around it in your own voice."
+            preview={<IdeaInputPreview />}
+            specs={[
+              { icon: Clock, label: 'Takes', value: 'Seconds' },
+              { icon: PenLine, label: 'You give', value: 'One line about the video' },
+            ]}
+            bestFor="When you already know what to post"
+            cta="Use my idea"
+            onClick={() => setPath('own')}
+          />
+          <OptionCard
+            number="02"
+            kicker="About a minute"
+            title="Find trending ideas"
+            line="The research agent ranks what's working in your niche, measured on real videos."
+            preview={<TrendListPreview />}
+            specs={[
+              { icon: Clock, label: 'Takes', value: 'About a minute' },
+              { icon: BarChart3, label: 'You get', value: 'Ranked topics with evidence' },
+            ]}
+            bestFor="When you need something that's working now"
+            cta="Find trends"
+            onClick={() => { setPath('trend'); startResearch() }}
+          />
+        </OptionGrid>
+      )}
 
-            <Card
-              hoverable
-              onClick={() => { setPath('trend'); startResearch() }}
-              className="p-6"
-            >
-              <div className="w-10 h-10 rounded-xl bg-discord-green/15 flex items-center justify-center mb-4">
-                <TrendingUp size={20} className="text-discord-green" />
-              </div>
-              <h3 className="text-discord-white font-bold text-base mb-1">Find trending ideas</h3>
-              <p className="text-discord-muted text-sm">Research Agent scans your niche for high-performing topics matched to your style.</p>
-              <div className="flex items-center gap-1 text-discord-green text-sm font-semibold mt-4">
-                Discover trends <ChevronRight size={16} />
-              </div>
-            </Card>
+      {path === 'own' && (
+        <div>
+          <BackLink onClick={back} />
+          <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <Card className="p-6 sm:p-8">
+            <h2 className="display mb-4 text-[2.4rem]">Your idea</h2>
+            <Textarea
+              label="One line about the video"
+              value={ownIdea}
+              onChange={(e) => { setOwnIdea(e.target.value); setOwnError('') }}
+              placeholder="e.g. Rs 50 vs Rs 500 kulfi in Sahiwal — is the expensive one worth it?"
+              rows={4}
+              error={ownError}
+            />
+            <div className="mt-5 flex justify-end">
+              <Btn size="lg" iconRight={ArrowRight} onClick={submitOwn}>Continue</Btn>
+            </div>
+          </Card>
+          <Card tone="dark" className="p-6 sm:p-8">
+            <p className="font-mono text-[13px] font-semibold uppercase tracking-[0.08em] text-vh-accent">What makes a good idea</p>
+            <ol className="mt-4 space-y-3.5">
+              {['One clear question or claim', 'Specific: a place, a price, a number', 'Something you can show on camera'].map((t, i) => (
+                <li key={t} className="flex items-center gap-4">
+                  <span className="display w-9 text-[2rem] leading-none text-vh-accent">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="text-[16px] font-semibold">{t}</span>
+                </li>
+              ))}
+            </ol>
+          </Card>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Path A — own idea */}
-        {path === 'own' && (
-          <div className="animate-fadeIn">
-            <button onClick={() => setPath(null)} className="text-discord-muted hover:text-discord-white text-sm mb-4 transition-colors">← Back</button>
-            <Card className="p-6">
-              <h3 className="text-discord-white font-semibold mb-4 flex items-center gap-2">
-                <Lightbulb size={16} className="text-discord-blurple" /> Your idea
-              </h3>
-              <Textarea
-                value={ownIdea}
-                onChange={(e) => { setOwnIdea(e.target.value); setOwnError('') }}
-                placeholder="e.g. Why most developers are learning the wrong things in 2025"
-                rows={3}
-                error={ownError}
-              />
-              <Btn className="mt-4 w-full" size="lg" onClick={submitOwn} icon={ChevronRight}>
-                Continue to Script Generation
-              </Btn>
-            </Card>
-          </div>
-        )}
+      {path === 'trend' && (
+        <div>
+          <BackLink onClick={back} />
 
-        {/* Path B — trend research */}
-        {path === 'trend' && (
-          <div className="animate-fadeIn">
-            <button onClick={() => { setPath(null); setTopics([]); setResearching(false) }} className="text-discord-muted hover:text-discord-white text-sm mb-4 transition-colors">← Back</button>
+          {researching && (
+            <JobProgress icon={Radar} title="Researching your niche" steps={RESEARCH_STEPS} currentStep={researchStep}
+              hint="Scanning YouTube Shorts from the last 14 days and ranking topics by real performance." />
+          )}
 
-            {/* Research in progress */}
-            {researching && (
-              <Card className="p-6">
-                <div className="flex items-center gap-3 mb-5">
-                  <Search size={18} className="text-discord-blurple animate-pulse" />
-                  <h3 className="text-discord-white font-semibold">Research Agent processing…</h3>
-                </div>
-                <ProgressSteps steps={RESEARCH_STEPS} currentStep={researchStep} />
-              </Card>
-            )}
+          {!researching && researchError && (
+            <div className="max-w-xl space-y-3">
+              <Alert type="error">{researchError}</Alert>
+              <Btn variant="secondary" icon={RefreshCw} onClick={startResearch}>Try again</Btn>
+            </div>
+          )}
 
-            {!researching && researchError && (
-              <Alert type="error">
-                <p>{researchError}</p>
-                <Btn size="sm" variant="secondary" className="mt-2" onClick={startResearch}>Try again</Btn>
-              </Alert>
-            )}
-
-            {/* Results */}
-            {!researching && topics.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-discord-white font-semibold">{topics.length} trending topics found</p>
-                  <Btn variant="ghost" size="sm" icon={Search} onClick={startResearch}>Refresh</Btn>
-                </div>
-                {topics.map((t) => (
-                  <TopicPreviewCard key={t.id} topic={t} onSelect={() => selectTopic(t)} />
+          {!researching && topics.length > 0 && (
+            <>
+              <SectionTitle right={<Btn variant="secondary" size="sm" icon={RefreshCw} onClick={startResearch}>Refresh</Btn>}>
+                {topics.length} trending topics
+              </SectionTitle>
+              <p className="-mt-2 mb-5 font-mono text-[13px]">YouTube Shorts · last 14 days · ranked by real performance</p>
+              <Stagger className="space-y-4">
+                {topics.map((t, i) => (
+                  <StaggerItem key={t.id}><TopicRow rank={i + 1} topic={t} onSelect={() => selectTopic(t)} /></StaggerItem>
                 ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              </Stagger>
+            </>
+          )}
+        </div>
+      )}
     </Page>
   )
 }
 
-function TopicPreviewCard({ topic, onSelect }) {
-  const [expanded, setExpanded] = useState(false)
+function BackLink({ onClick }) {
   return (
-    <Card className="p-5">
-      <div className="flex items-start gap-3 mb-3">
-        <div className="flex-1 min-w-0">
-          <h4 className="text-discord-white font-semibold text-sm mb-1">{topic.topic}</h4>
-          <div className="flex items-center gap-3 flex-wrap">
-            <ScorePill label="Trend" value={topic.trendScore} />
-            <ScorePill label="Creator Fit" value={topic.creatorFit} />
-          </div>
-        </div>
-        <Btn size="sm" onClick={onSelect} icon={Zap}>Select</Btn>
-      </div>
-
-      <p className="text-discord-muted text-xs leading-relaxed mb-3 italic">"{topic.whyThis}"</p>
-
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="text-discord-blurple text-xs hover:underline"
-      >
-        {expanded ? 'Hide signals ↑' : `View ${topic.signals.length} supporting signals ↓`}
-      </button>
-
-      {expanded && (
-        <ul className="mt-2 space-y-1">
-          {topic.signals.map((s, i) => (
-            <li key={i} className="flex items-start gap-2 text-discord-muted text-xs">
-              <span className="text-discord-green mt-0.5">•</span> {s}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
+    <button type="button" onClick={onClick} className="mb-6 inline-flex items-center gap-1.5 text-[15px] font-semibold underline-offset-4 hover:underline">
+      <ArrowLeft size={16} /> Choose another way
+    </button>
   )
 }
 
-function ScorePill({ label, value }) {
-  const color = value >= 85 ? 'text-discord-green' : value >= 70 ? 'text-discord-yellow' : 'text-discord-muted'
+function Score({ label, value }) {
+  const tone = scoreTone(value)
   return (
-    <span className="flex items-center gap-1 text-xs">
-      <span className="text-discord-faint">{label}:</span>
-      <span className={`font-bold ${color}`}>{value}/100</span>
-    </span>
+    <div className="text-right">
+      <p className={`display text-[2.4rem] leading-[0.85] tabular ${tone === 'bad' ? 'text-vh-accent2' : ''}`}>{value ?? '—'}</p>
+      <p className="mt-1 font-mono text-[12px]">{label}</p>
+    </div>
+  )
+}
+
+function TopicRow({ rank, topic, onSelect }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card shadow={false} className="p-5 sm:p-6">
+      <div className="flex items-start gap-5">
+        <span className="display w-12 shrink-0 text-[3rem] leading-[0.85] text-vh-accent2 tabular">{String(rank).padStart(2, '0')}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[18px] font-bold">{topic.topic}</h3>
+            {topic.lowConfidence && <Badge color="warn">Low confidence</Badge>}
+          </div>
+          {topic.whyThis && <p className="mt-1.5 text-[15px] leading-relaxed">{topic.whyThis}</p>}
+          {topic.signals?.length > 0 && (
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+              className="mt-3 inline-flex items-center gap-1 text-[14px] font-bold underline underline-offset-4">
+              {topic.signals.length} supporting signals
+              <ChevronDown size={14} strokeWidth={3} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          {open && (
+            <ul className="mt-3 space-y-1.5 border-l-4 border-vh-accent pl-3">
+              {topic.signals.map((s, i) => <li key={i} className="text-[14px] leading-relaxed">{s}</li>)}
+            </ul>
+          )}
+        </div>
+        <div className="hidden shrink-0 items-start gap-6 sm:flex">
+          <Score label="Trend" value={topic.trendScore} />
+          <Score label="Fit" value={topic.creatorFit} />
+        </div>
+        <Btn size="sm" onClick={onSelect} iconRight={ArrowRight} className="shrink-0">Select</Btn>
+      </div>
+    </Card>
   )
 }

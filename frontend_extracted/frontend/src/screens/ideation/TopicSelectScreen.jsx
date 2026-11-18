@@ -1,168 +1,115 @@
 import { useState } from 'react'
-import { ChevronRight, Zap, ArrowLeft, TrendingUp } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Plus, X, Lightbulb } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { Btn, Card, SectionHeader, Page } from '../../components/ui'
+import { Btn, Badge, Page, PageHero, ActionBar, Input, EmptyState, Card } from '../../components/ui'
+import { Stagger, StaggerItem } from '../../components/motion'
 
 export default function TopicSelectScreen() {
   const { selectedTopic, setSelectedTopic, trendingTopics, navigate } = useApp()
-
-  // Initialise picked from context (set by IdeationScreen when user clicked Select)
-  // trendingTopics are the real fetched topics; fall back to selectedTopic if coming from own-idea path
+  // Real research topics; or just the own idea when coming from that path
   const topics = trendingTopics.length > 0 ? trendingTopics : (selectedTopic ? [selectedTopic] : [])
-
   const [picked, setPicked] = useState(selectedTopic)
   const [useOwn, setUseOwn] = useState(false)
   const [ownText, setOwnText] = useState('')
 
-  const handleCardClick = (t) => {
-    // Toggle: clicking the already-selected card unselects it
-    setPicked(prev => prev?.id === t.id ? null : t)
+  const toggle = (t) => setPicked((prev) => (prev?.id === t.id ? null : t))
+  const pickOwn = () => {
+    if (!ownText.trim()) return
+    setPicked({ id: 'own_' + Date.now(), topic: ownText.trim(), trendScore: null, creatorFit: null, isOwn: true })
+    setUseOwn(false)
   }
-
   const proceed = () => {
     if (!picked) return
     setSelectedTopic(picked)
     navigate('script')
   }
+  const list = picked?.isOwn && !topics.some((t) => t.id === picked.id) ? [picked, ...topics] : topics
 
   return (
-    <Page>
-      <div className="max-w-2xl mx-auto">
+    <Page art="topics">
+      <button type="button" onClick={() => navigate('ideation')}
+        className="mb-6 inline-flex items-center gap-1.5 text-[15px] font-semibold underline-offset-4 hover:underline">
+        <ArrowLeft size={16} /> Back to ideation
+      </button>
+      <PageHero
+        step="01"
+        label="Ideation"
+        title={['Pick your', 'Topic']}
+        lead="Pick the topic for this video. Click a selected topic again to clear it."
+      />
 
-        {/* Back button */}
-        <button
-          onClick={() => navigate('ideation')}
-          className="flex items-center gap-1.5 text-discord-muted hover:text-discord-white text-sm mb-5 transition-colors"
-        >
-          <ArrowLeft size={15} /> Back to Ideation
-        </button>
-
-        <SectionHeader
-          icon={Zap}
-          title="Select your topic"
-          subtitle="Choose the topic you want to create content around. Click a selected topic to deselect."
-        />
-
-        {/* Topic cards */}
-        {!useOwn && topics.length > 0 && (
-          <div className="space-y-3 mb-4">
-            {topics.map((t) => (
-              <Card
-                key={t.id}
-                selected={picked?.id === t.id}
-                onClick={() => handleCardClick(t)}
-                hoverable
-                className="p-5 cursor-pointer"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp size={14} className="text-discord-blurple flex-shrink-0" />
-                      <h4 className="text-discord-white font-semibold text-sm">{t.topic}</h4>
+      {list.length === 0 ? (
+        <Card shadow={false}><EmptyState icon={Lightbulb} title="No topics loaded">Go back and find trending ideas, or write your own below.</EmptyState></Card>
+      ) : (
+        <Stagger role="radiogroup" aria-label="Topics" className="space-y-4">
+          {list.map((t, i) => {
+            const on = picked?.id === t.id
+            return (
+              <StaggerItem key={t.id}>
+                <button type="button" role="radio" aria-checked={on} onClick={() => toggle(t)}
+                  className={`flex w-full items-center gap-5 rounded-2xl border-2 border-vh-night bg-white p-5 text-left transition-[transform,box-shadow] duration-200 sm:p-6
+                    ${on ? 'shadow-accent' : 'hover:-translate-y-0.5 hover:shadow-hard-sm'}`}>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-vh-night
+                    ${on ? 'bg-vh-accent' : 'bg-white'}`}>
+                    {on && <Check size={16} strokeWidth={3.5} />}
+                  </span>
+                  <span className="display hidden w-11 shrink-0 text-[2.6rem] leading-[0.85] text-vh-accent2 sm:block">{String(i + 1).padStart(2, '0')}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[18px] font-bold">{t.topic}</span>
+                      {t.isOwn && <Badge color="pop">Your idea</Badge>}
+                      {on && <Badge color="ok">Selected</Badge>}
                     </div>
-                    <div className="flex flex-wrap gap-3 mb-2">
-                      <ScoreChip label="Trend Score" value={t.trendScore} />
-                      <ScoreChip label="Creator Fit" value={t.creatorFit} />
+                    {t.whyThis && <p className="mt-1 text-[15px] leading-relaxed">{t.whyThis}</p>}
+                  </div>
+                  {(t.trendScore != null || t.creatorFit != null) && (
+                    <div className="hidden shrink-0 gap-6 text-right sm:flex">
+                      <Metric label="Trend" value={t.trendScore} />
+                      <Metric label="Fit" value={t.creatorFit} />
                     </div>
-                    <p className="text-discord-muted text-xs italic leading-relaxed mb-2">"{t.whyThis}"</p>
-                    {t.signals?.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {t.signals.slice(0, 2).map((s, i) => (
-                          <span key={i} className="text-discord-faint text-xs bg-discord-input px-2 py-0.5 rounded-full">• {s}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {picked?.id === t.id
-                      ? <div className="w-6 h-6 rounded-full bg-discord-blurple flex items-center justify-center shadow-md"><span className="text-white text-xs">✓</span></div>
-                      : <div className="w-6 h-6 rounded-full border-2 border-discord-faint/40" />}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
+                  )}
+                </button>
+              </StaggerItem>
+            )
+          })}
+        </Stagger>
+      )}
 
-        {/* No topics yet — came directly without research */}
-        {!useOwn && topics.length === 0 && (
-          <div className="bg-discord-sidebar border border-discord-faint/20 rounded-xl p-6 mb-4 text-center">
-            <p className="text-discord-muted text-sm">No trending topics loaded.</p>
-            <p className="text-discord-faint text-xs mt-1">Go back and use "Find trending ideas" or enter your own idea below.</p>
-          </div>
-        )}
-
-        {/* Own idea */}
-        <div className="mb-6">
-          {!useOwn ? (
-            <button
-              onClick={() => { setUseOwn(true); setPicked(null) }}
-              className="text-discord-blurple text-sm hover:underline transition-colors"
-            >
-              + Use my own idea instead
-            </button>
-          ) : (
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-discord-white text-sm font-semibold">Your own idea</p>
-                <button onClick={() => setUseOwn(false)} className="text-discord-muted hover:text-discord-white text-xs transition-colors">Cancel</button>
+      <div className="mt-6">
+        {!useOwn ? (
+          <Btn variant="secondary" icon={Plus} onClick={() => { setUseOwn(true) }}>Use my own idea instead</Btn>
+        ) : (
+          <Card className="max-w-2xl p-5 sm:p-6">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[14rem] flex-1">
+                <Input label="Your idea" value={ownText} autoFocus onChange={(e) => setOwnText(e.target.value)}
+                  placeholder="e.g. Why most developers learn the wrong things"
+                  onKeyDown={(e) => e.key === 'Enter' && pickOwn()} />
               </div>
-              <input
-                value={ownText}
-                onChange={(e) => setOwnText(e.target.value)}
-                placeholder="e.g. Why most developers are learning the wrong things"
-                className="w-full bg-discord-input border border-discord-faint/40 rounded-lg px-3 py-2.5 text-discord-white text-sm placeholder-discord-muted/60 focus:outline-none focus:border-discord-blurple transition-colors"
-                onKeyDown={(e) => { if (e.key === 'Enter' && ownText.trim()) { setPicked({ id: 'own_' + Date.now(), topic: ownText.trim(), trendScore: null, creatorFit: null, isOwn: true }); setUseOwn(false) } }}
-              />
-              <Btn
-                className="mt-3 w-full"
-                size="sm"
-                variant="outline"
-                disabled={!ownText.trim()}
-                onClick={() => {
-                  if (ownText.trim()) {
-                    setPicked({ id: 'own_' + Date.now(), topic: ownText.trim(), trendScore: null, creatorFit: null, isOwn: true })
-                    setUseOwn(false)
-                  }
-                }}
-              >
-                Use This Idea
-              </Btn>
-            </Card>
-          )}
-        </div>
-
-        {/* Selected confirmation banner */}
-        {picked && !useOwn && (
-          <div className="bg-discord-blurple/10 border border-discord-blurple/30 rounded-xl p-4 mb-4 animate-fadeIn flex items-center justify-between">
-            <div>
-              <p className="text-discord-blurple text-xs font-semibold mb-0.5">Selected topic</p>
-              <p className="text-discord-white text-sm font-medium">{picked.topic}</p>
+              <Btn onClick={pickOwn} disabled={!ownText.trim()} className="h-12">Use</Btn>
+              <Btn variant="ghost" icon={X} onClick={() => setUseOwn(false)} className="h-12">Cancel</Btn>
             </div>
-            <button
-              onClick={() => setPicked(null)}
-              className="text-discord-muted hover:text-discord-red text-xs transition-colors ml-4 flex-shrink-0"
-            >
-              ✕ Clear
-            </button>
-          </div>
+          </Card>
         )}
-
-        <Btn size="lg" className="w-full" disabled={!picked} onClick={proceed} icon={ChevronRight}>
-          Generate Scripts
-        </Btn>
       </div>
+
+      <ActionBar actions={
+        <Btn size="lg" disabled={!picked} onClick={proceed} iconRight={ArrowRight}>Generate scripts</Btn>
+      }>
+        <div className="min-w-0">
+          <p className="font-mono text-[12px]">Selected topic</p>
+          <p className="max-w-[46ch] truncate text-lg font-bold">{picked?.topic || 'Nothing selected yet'}</p>
+        </div>
+      </ActionBar>
     </Page>
   )
 }
 
-function ScoreChip({ label, value }) {
-  if (value == null) return null
-  const color = value >= 85 ? 'text-discord-green' : value >= 70 ? 'text-discord-yellow' : 'text-discord-muted'
+function Metric({ label, value }) {
   return (
-    <span className="text-xs">
-      <span className="text-discord-faint">{label}: </span>
-      <span className={`font-bold ${color}`}>{value}/100</span>
-    </span>
+    <div>
+      <p className="display text-[2.4rem] leading-[0.85] tabular">{value ?? '—'}</p>
+      <p className="mt-1 font-mono text-[12px]">{label}</p>
+    </div>
   )
 }

@@ -1,203 +1,163 @@
 import { useState, useEffect } from 'react'
-import { Instagram, CheckCircle, Clock, Send, Calendar, Film } from 'lucide-react'
+import { ArrowRight, CircleCheck, Film, ChevronDown } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { getInstagramAccount, publishNow, schedulePost, generateCaption } from '../../services/api'
-import { Btn, Card, Badge, SectionHeader, Page, Alert, Textarea, Input } from '../../components/ui'
+import {
+  Btn, Card, Badge, Page, PageHero, Alert, Input, ActionBar, Segmented, Stat, Spinner,
+} from '../../components/ui'
 
-const STATUS_FLOW = ['Draft', 'Processing', 'Scheduled', 'Published']
-const STATUS_COLOR = {
-  Draft:     'muted',
-  Processing:'yellow',
-  Scheduled: 'blurple',
-  Published: 'green',
-  Failed:    'red',
-}
+const STATUS_TONE = { Draft: 'muted', Processing: 'warn', Scheduled: 'info', Published: 'ok', Failed: 'bad' }
+const WHEN = [{ value: 'now', label: 'Publish now' }, { value: 'schedule', label: 'Schedule' }]
+const MAX_CAPTION = 2200   // Instagram's caption limit
 
 export default function PublishScreen() {
-  const { selectedTopic, selectedVariant, publishStatus, setPublishStatus } = useApp()
+  const { selectedTopic, selectedVariant, videoResult, publishStatus, setPublishStatus } = useApp()
   const [account, setAccount] = useState(null)
   const [caption, setCaption] = useState('')
   const [schedDate, setSchedDate] = useState('')
   const [schedTime, setSchedTime] = useState('18:00')
-  const [mode, setMode] = useState(null) // null | 'now' | 'schedule'
-  const [status, setStatus] = useState(publishStatus || null)  // null | 'publishing' | 'scheduling' | 'published' | 'scheduled'
+  const [when, setWhen] = useState('now')
+  const [status, setStatus] = useState(publishStatus || null) // null | publishing | scheduling | published | scheduled
   const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     getInstagramAccount().then(({ account: a }) => setAccount(a))
     generateCaption({ topic: selectedTopic?.topic }).then(({ caption: c }) => setCaption(c))
-    // Default schedule date = tomorrow
-    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
     setSchedDate(tomorrow.toISOString().split('T')[0])
-  }, [])
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handlePublishNow = async () => {
-    setStatus('publishing')
-    await publishNow({ caption })
-    setStatus('published')
-    setPublishStatus('published')
+  const submit = async () => {
+    if (when === 'now') {
+      setStatus('publishing')
+      await publishNow({ caption })
+      setStatus('published')
+      setPublishStatus('published')
+    } else {
+      if (!schedDate || !schedTime) return
+      setStatus('scheduling')
+      await schedulePost({ caption, date: schedDate, time: schedTime })
+      setStatus('scheduled')
+      setPublishStatus('scheduled')
+    }
   }
 
-  const handleSchedule = async () => {
-    if (!schedDate || !schedTime) return
-    setStatus('scheduling')
-    await schedulePost({ caption, date: schedDate, time: schedTime })
-    setStatus('scheduled')
-    setPublishStatus('scheduled')
-  }
-
-  const CONTENT_HISTORY_DEMO = [
-    { id: 1, title: selectedVariant?.topic || 'AI Agents & Dev', status: status === 'published' ? 'Published' : status === 'scheduled' ? 'Scheduled' : 'Draft', date: status === 'scheduled' ? `${schedDate} ${schedTime}` : 'Now' },
-    { id: 2, title: 'Why Most Developers Are Learning Wrong', status: 'Published', date: 'Aug 18' },
-    { id: 3, title: 'The Quiet Death of SaaS', status: 'Scheduled', date: 'Aug 27' },
+  const title = selectedVariant?.topic || selectedTopic?.topic || 'Your video'
+  const busy = status === 'publishing' || status === 'scheduling'
+  const finished = status === 'published' || status === 'scheduled'
+  const history = [
+    { id: 1, title, status: status === 'published' ? 'Published' : status === 'scheduled' ? 'Scheduled' : 'Draft', date: status === 'scheduled' ? `${schedDate} ${schedTime}` : 'Now' },
+    { id: 2, title: 'Why most developers are learning the wrong things', status: 'Published', date: 'Aug 18' },
+    { id: 3, title: 'The quiet death of SaaS', status: 'Scheduled', date: 'Aug 27' },
   ]
 
   return (
-    <Page>
-      <div className="max-w-xl mx-auto">
-        <SectionHeader icon={Instagram} title="Publish" subtitle="Share your content to Instagram or schedule for later." />
+    <Page art="publish">
+      <PageHero
+        step="05"
+        label="Publish"
+        title={['Publish to', 'Instagram']}
+        topic={selectedTopic?.topic}
+        lead="Write the caption, then post now or pick a time."
+      />
 
-        {/* Account status */}
-        {account && (
-          <Card className="p-4 mb-5 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-discord-blurple flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-              {account.avatar}
-            </div>
-            <div className="flex-1">
-              <p className="text-discord-white font-semibold text-sm">{account.handle}</p>
-              <p className="text-discord-muted text-xs">{account.followers} followers</p>
-            </div>
-            <Badge color="green">● Connected</Badge>
-          </Card>
-        )}
+      <Alert type="info" chip="Preview" className="mb-9">Instagram publishing is not connected yet, so nothing is actually posted.</Alert>
 
-        {/* Video preview placeholder */}
-        <Card className="p-4 mb-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-16 h-16 rounded-xl bg-discord-blurple/20 flex items-center justify-center flex-shrink-0">
-              <Film size={24} className="text-discord-blurple" />
-            </div>
-            <div>
-              <p className="text-discord-white text-sm font-semibold">{selectedVariant?.topic || selectedTopic?.topic || 'Your Video'}</p>
-              <p className="text-discord-muted text-xs">{selectedVariant?.hookType || 'Script ready'} · 27s</p>
-              <Badge color="green" size="sm">Ready to publish</Badge>
-            </div>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
+        {/* Video + account */}
+        <div className="space-y-5">
+          <div className="relative mx-auto flex aspect-[9/16] w-full max-w-[15rem] items-center justify-center overflow-hidden rounded-2xl bg-vh-night shadow-accent sm:max-w-[17rem] lg:max-w-none">
+            {videoResult?.videoUrl
+              ? <video src={videoResult.videoUrl} controls playsInline className="h-full w-full object-contain" />
+              : <div className="px-6 text-center"><Film size={34} className="mx-auto mb-3 text-vh-accent" /><p className="font-mono text-[14px] text-vh-cream">Exported for editing</p></div>}
           </div>
-        </Card>
-
-        {/* Caption */}
-        <div className="mb-5">
-          <Textarea
-            label="Caption"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            rows={5}
-            placeholder="Write a caption..."
-          />
+          {account && (
+            <Card shadow={false} className="flex items-center gap-3 p-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-vh-night bg-vh-accent text-sm font-bold">{account.avatar}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[16px] font-bold">{account.handle}</p>
+                <p className="font-mono text-[12px]">{account.followers} followers</p>
+              </div>
+              <Badge color="ok">Connected</Badge>
+            </Card>
+          )}
         </div>
 
-        {/* Publish / Schedule */}
-        {!status && (
-          <div className="space-y-3">
-            {!mode && (
-              <div className="grid grid-cols-2 gap-3">
-                <Btn size="lg" icon={Send} onClick={() => setMode('now')}>Publish Now</Btn>
-                <Btn size="lg" variant="secondary" icon={Calendar} onClick={() => setMode('schedule')}>Schedule Post</Btn>
+        {/* Caption + timing */}
+        <div className="min-w-0 space-y-6">
+          <Card className="p-6 sm:p-8">
+            <label htmlFor="caption" className="display block text-[2.4rem]">Caption</label>
+            <textarea id="caption" value={caption} onChange={(e) => setCaption(e.target.value.slice(0, MAX_CAPTION))} rows={8}
+              placeholder="Write a caption…" disabled={busy || finished}
+              className="mt-4 w-full resize-y rounded-xl border-2 border-vh-night bg-vh-cream px-5 py-4 text-[17px] leading-relaxed placeholder:text-vh-night/45 focus:outline-none focus:ring-4 focus:ring-vh-accent/40 disabled:opacity-60" />
+            <p className="mt-3 font-mono text-[14px] tabular">{caption.length} / {MAX_CAPTION}</p>
+          </Card>
+
+          {!finished && (
+            <Card shadow={false} className="p-6 sm:px-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <p className="display text-[2.4rem]">When</p>
+                <Segmented label="When to post" options={WHEN} value={when} onChange={setWhen} />
               </div>
-            )}
-
-            {mode === 'now' && (
-              <Card className="p-4 animate-fadeIn">
-                <p className="text-discord-white text-sm font-semibold mb-3">Publish immediately</p>
-                <p className="text-discord-muted text-xs mb-4">Your video will be posted to {account?.handle} right away.</p>
-                <div className="flex gap-3">
-                  <Btn className="flex-1" icon={Send} onClick={handlePublishNow}>Confirm & Publish</Btn>
-                  <Btn variant="secondary" onClick={() => setMode(null)}>Cancel</Btn>
-                </div>
-              </Card>
-            )}
-
-            {mode === 'schedule' && (
-              <Card className="p-4 animate-fadeIn">
-                <p className="text-discord-white text-sm font-semibold mb-3">Schedule post</p>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+              {when === 'schedule' && (
+                <div className="mt-5 grid max-w-sm grid-cols-2 gap-3">
                   <Input label="Date" type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} />
                   <Input label="Time" type="time" value={schedTime} onChange={(e) => setSchedTime(e.target.value)} />
                 </div>
-                <div className="flex gap-3">
-                  <Btn className="flex-1" icon={Calendar} onClick={handleSchedule}>Confirm Schedule</Btn>
-                  <Btn variant="secondary" onClick={() => setMode(null)}>Cancel</Btn>
-                </div>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* Publishing states */}
-        {status === 'publishing' && (
-          <Card className="p-6 text-center animate-fadeIn">
-            <div className="w-12 h-12 rounded-full bg-discord-blurple/20 flex items-center justify-center mx-auto mb-3">
-              <Send size={22} className="text-discord-blurple animate-pulse" />
-            </div>
-            <p className="text-discord-white font-semibold">Publishing…</p>
-            <p className="text-discord-muted text-sm mt-1">Sending to Instagram</p>
-          </Card>
-        )}
-
-        {status === 'scheduling' && (
-          <Card className="p-6 text-center animate-fadeIn">
-            <div className="w-12 h-12 rounded-full bg-discord-blurple/20 flex items-center justify-center mx-auto mb-3">
-              <Clock size={22} className="text-discord-blurple animate-pulse" />
-            </div>
-            <p className="text-discord-white font-semibold">Scheduling…</p>
-            <p className="text-discord-muted text-sm mt-1">Setting up your post</p>
-          </Card>
-        )}
-
-        {status === 'published' && (
-          <Card className="p-6 text-center border-discord-green/30 animate-fadeIn">
-            <div className="w-12 h-12 rounded-full bg-discord-green/20 flex items-center justify-center mx-auto mb-3">
-              <CheckCircle size={22} className="text-discord-green" />
-            </div>
-            <p className="text-discord-white font-bold text-lg">Published!</p>
-            <p className="text-discord-muted text-sm mt-1">Your video is now live on {account?.handle}</p>
-            <Badge color="green" size="lg" className="mt-3 inline-block">Published</Badge>
-          </Card>
-        )}
-
-        {status === 'scheduled' && (
-          <Card className="p-6 text-center border-discord-blurple/30 animate-fadeIn">
-            <div className="w-12 h-12 rounded-full bg-discord-blurple/20 flex items-center justify-center mx-auto mb-3">
-              <Calendar size={22} className="text-discord-blurple" />
-            </div>
-            <p className="text-discord-white font-bold text-lg">Scheduled Successfully</p>
-            <p className="text-discord-muted text-sm mt-1">Will post on {schedDate} at {schedTime}</p>
-            <Badge color="blurple" size="lg" className="mt-3 inline-block">Scheduled</Badge>
-          </Card>
-        )}
-
-        {/* Content status history */}
-        <div className="mt-8">
-          <button
-            onClick={() => setShowHistory(h => !h)}
-            className="text-discord-muted text-sm hover:text-discord-white transition-colors mb-3"
-          >
-            {showHistory ? '▼' : '▶'} Content Status History
-          </button>
-          {showHistory && (
-            <div className="space-y-2 animate-fadeIn">
-              {CONTENT_HISTORY_DEMO.map((item) => (
-                <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 bg-discord-sidebar rounded-lg border border-discord-faint/20">
-                  <Film size={14} className="text-discord-muted flex-shrink-0" />
-                  <span className="flex-1 text-discord-white text-xs truncate">{item.title}</span>
-                  <span className="text-discord-faint text-xs">{item.date}</span>
-                  <Badge color={STATUS_COLOR[item.status] || 'muted'} size="sm">{item.status}</Badge>
-                </div>
-              ))}
-            </div>
+              )}
+            </Card>
           )}
+
+          {busy && (
+            <Card shadow={false} className="flex items-center gap-3 p-6">
+              <Spinner size={20} />
+              <p className="text-[16px] font-semibold">{status === 'publishing' ? 'Sending to Instagram…' : 'Scheduling your post…'}</p>
+            </Card>
+          )}
+
+          {finished && (
+            <Card tone="dark" className="flex items-start gap-4 p-6 sm:p-8">
+              <CircleCheck size={34} className="shrink-0 text-vh-accent" />
+              <div>
+                <p className="display text-[2.4rem] text-vh-accent">{status === 'published' ? 'Published' : 'Scheduled'}</p>
+                <p className="mt-1 text-[16px]">
+                  {status === 'published' ? `Live on ${account?.handle || 'your account'}.` : `Posts on ${schedDate} at ${schedTime}.`}
+                </p>
+              </div>
+            </Card>
+          )}
+
+          <section>
+            <button type="button" onClick={() => setShowHistory((h) => !h)} aria-expanded={showHistory}
+              className="inline-flex items-center gap-1.5 text-[17px] font-bold underline underline-offset-4">
+              <ChevronDown size={16} strokeWidth={3} className={`transition-transform ${showHistory ? 'rotate-180' : ''}`} /> Post history
+            </button>
+            {showHistory && (
+              <ul className="mt-4 space-y-3">
+                {history.map((item) => (
+                  <li key={item.id} className="flex items-center gap-3 rounded-xl border-2 border-vh-night bg-white px-4 py-3">
+                    <span className="flex h-10 w-9 shrink-0 items-center justify-center rounded bg-vh-night"><Film size={14} className="text-vh-accent" /></span>
+                    <span className="flex-1 truncate text-[15px] font-semibold">{item.title}</span>
+                    <span className="font-mono text-[12px]">{item.date}</span>
+                    <Badge color={STATUS_TONE[item.status] || 'muted'}>{item.status}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
+
+      <ActionBar actions={
+        <Btn size="lg" iconRight={ArrowRight} loading={busy} disabled={finished} onClick={submit}>
+          {when === 'now' ? 'Publish now' : 'Schedule post'}
+        </Btn>
+      }>
+        <Stat label="Account" value={account?.handle || '—'} />
+        <Stat label="Caption" value={`${caption.length} characters`} />
+        <Stat label="When" value={when === 'now' ? 'Now' : `${schedDate} · ${schedTime}`} />
+      </ActionBar>
     </Page>
   )
 }
