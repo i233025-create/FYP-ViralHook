@@ -15,6 +15,7 @@ pytrends==4.9.2                 # Unofficial Google Trends API wrapper (no key n
 pandas==2.2.2                   # Required by pytrends for response parsing
 scikit-learn==1.4.2             # AgglomerativeClustering for research topic clusters
 sentence-transformers==2.7.0    # all-MiniLM-L6-v2 embeddings (already in module1 venv)
+wordfreq==3.1.1                 # English-word share: drops romanised non-English titles
 
 # ─── Pydantic v2 ──────────────────────────────────────────────────────────────
 pydantic==2.7.1                 # Typed state models — v2 required

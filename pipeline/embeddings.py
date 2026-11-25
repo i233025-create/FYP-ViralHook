@@ -13,6 +13,9 @@ Two lazily-loaded SentenceTransformers (CPU):
                          on 41 real reels; on the Urdu–English food creator R@3
                          94.1 vs 58.8. e5 must see the "query: " / "passage: "
                          prefixes it was trained with.
+  embed_texts(..., model_name=MULTILINGUAL_EMBEDDING_MODEL)
+                         paraphrase-multilingual-MiniLM-L12-v2 — Research Agent
+                         on Urdu / Roman Urdu niches.
 """
 
 from __future__ import annotations
@@ -22,6 +25,10 @@ import os
 import numpy as np
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# Urdu (script + Roman Urdu) research niches: all-MiniLM-L6-v2 is English-only, so
+# Urdu titles would get meaningless vectors. This model maps Urdu and English
+# into one space (same 384 dims, same family). Used only when a niche asks for it.
+MULTILINGUAL_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 RETRIEVAL_MODEL = "intfloat/multilingual-e5-small"
 RETRIEVAL_QUERY_PREFIX = "query: "
 RETRIEVAL_PASSAGE_PREFIX = "passage: "
@@ -37,9 +44,9 @@ def _model(name: str):
     return _models[name]
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """all-MiniLM-L6-v2 → (n, 384) L2-normalised matrix. Model loads once (CPU)."""
-    return np.asarray(_model(EMBEDDING_MODEL).encode(
+def embed_texts(texts: list[str], model_name: str = EMBEDDING_MODEL) -> np.ndarray:
+    """texts → (n, 384) L2-normalised matrix (all-MiniLM-L6-v2 by default). Each model loads once (CPU)."""
+    return np.asarray(_model(model_name).encode(
         texts, normalize_embeddings=True, show_progress_bar=False))
 
 
