@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Zap, MailCheck, KeyRound } from 'lucide-react'
+import { MailCheck, KeyRound } from 'lucide-react'
+import { LogoMark } from '../../components/brand/Logo'
+import AuthFrame, { AuthTitle } from './AuthFrame'
 import { useApp } from '../../context/AppContext'
 import { getCurrentUser, resetPassword, verifyEmail } from '../../services/api'
-import { Btn, Input, Alert } from '../../components/ui'
+import { Btn, Input, Alert, Spinner } from '../../components/ui'
 
 // Screens opened from email links (/verify-email?token=… and /reset-password?token=…).
 
@@ -13,23 +15,17 @@ function clearLinkFromUrl() {
   window.history.replaceState(null, '', '/')
 }
 
-function Shell({ icon: Icon, title, children }) {
+function Shell({ icon: Icon, title, chip, children }) {
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-discord-dark p-6">
-      <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2 mb-8">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-discord-blurple">
-            <Zap size={16} className="text-white" />
-          </div>
-          <span className="text-discord-white font-bold">ViralHook</span>
-        </div>
-        <div className="flex items-center gap-3 mb-5">
-          <Icon size={22} className="text-discord-blurple" />
-          <h2 className="text-discord-white font-bold text-2xl">{title}</h2>
-        </div>
+    <AuthFrame chip={chip}>
+      <div className="rounded-2xl border-2 border-vh-night bg-white p-6 shadow-hard sm:p-8">
+        <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-xl border-2 border-vh-night bg-vh-accent">
+          <Icon size={26} strokeWidth={2} />
+        </span>
+        <AuthTitle plain={title[0]} highlight={title[1]} />
         <div className="space-y-4">{children}</div>
       </div>
-    </div>
+    </AuthFrame>
   )
 }
 
@@ -55,8 +51,8 @@ export function VerifyEmailScreen() {
   }
 
   return (
-    <Shell icon={MailCheck} title="Verify email">
-      {state === 'working' && <p className="text-discord-muted text-sm">Checking your link…</p>}
+    <Shell icon={MailCheck} title={['Verify', 'email']} chip="Email link">
+      {state === 'working' && <p className="flex items-center gap-2 text-[16px] font-medium"><Spinner size={18} /> Checking your link…</p>}
       {state === 'done' && <Alert type="success">Your email is verified. Thank you!</Alert>}
       {state === 'failed' && (
         <Alert type="error">
@@ -94,8 +90,8 @@ export function ResetPasswordScreen() {
   }
 
   return (
-    <Shell icon={KeyRound} title="Choose a new password">
-      <p className="text-discord-muted text-sm">
+    <Shell icon={KeyRound} title={['New', 'password']} chip="Email link">
+      <p className="text-[16px] leading-relaxed">
         After saving, every device signed in to your account is signed out.
       </p>
       <form onSubmit={submit} className="space-y-4">
@@ -104,11 +100,11 @@ export function ResetPasswordScreen() {
         <Input label="Repeat new password" type="password" value={confirm} autoComplete="new-password"
                onChange={(e) => setConfirm(e.target.value)} required />
         {error && <Alert type="error">{error}</Alert>}
-        <Btn type="submit" size="lg" loading={loading} className="w-full">Save Password</Btn>
+        <Btn type="submit" size="lg" loading={loading} className="w-full">Save password</Btn>
       </form>
       <button onClick={() => { clearLinkFromUrl(); navigate('auth') }}
-              className="w-full text-center text-discord-muted text-sm hover:text-discord-white">
-        Back to Sign In
+              className="w-full text-center text-[15px] font-bold underline underline-offset-4 hover:text-vh-accent2">
+        Back to sign in
       </button>
     </Shell>
   )
@@ -116,12 +112,14 @@ export function ResetPasswordScreen() {
 
 export function BootScreen() {
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-discord-dark">
-      <div className="flex items-center gap-3 text-discord-muted text-sm">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-discord-blurple animate-pulse">
-          <Zap size={16} className="text-white" />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-6" role="status" aria-live="polite">
+      <div className="on-dark w-full max-w-sm overflow-hidden rounded-2xl bg-vh-night shadow-accent">
+        <div className="clapper h-9" aria-hidden="true" />
+        <div className="flex flex-col items-center px-8 pb-8 pt-7">
+          <LogoMark className="h-16 w-auto animate-pulse text-vh-accent" />
+          <p className="display mt-5 text-[2.4rem] text-vh-cream">Loading your <span className="text-vh-accent">studio</span></p>
+          <div className="mt-5 h-[9px] w-full animate-strip sprockets" aria-hidden="true" />
         </div>
-        Loading your workspace…
       </div>
     </div>
   )

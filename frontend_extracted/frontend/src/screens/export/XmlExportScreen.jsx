@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { FileCode, Download, CheckCircle, ChevronRight } from 'lucide-react'
+import { FileCode, Download, ArrowRight, ArrowLeft, Check, Minus } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { exportXML } from '../../services/api'
-import { Btn, Card, ProgressSteps, SectionHeader, Page, Alert } from '../../components/ui'
+import { Btn, Card, Page, PageHero, Alert, ActionBar, Stat, Tile } from '../../components/ui'
+import JobProgress from '../../components/JobProgress'
 import { MOCK_XML_SUMMARY } from '../../data/mockData'
+import { TimelinePreview } from '../../components/previews'
 
 const EXPORT_STEPS = [
   { id: 1, label: 'Preparing timeline' },
@@ -15,7 +17,7 @@ const EXPORT_STEPS = [
 ]
 
 export default function XmlExportScreen() {
-  const { productionPlan, setExportXML, navigate } = useApp()
+  const { productionPlan, setExportXML, selectedTopic, navigate } = useApp()
   const [phase, setPhase] = useState('idle')  // idle | generating | done
   const [step, setStep] = useState(-1)
   const [xml, setXml] = useState(null)
@@ -26,10 +28,7 @@ export default function XmlExportScreen() {
     setStep(0)
     setError('')
     try {
-      const { xml: x } = await exportXML({
-        plan: productionPlan,
-        onStep: (s) => setStep(s.id - 1),
-      })
+      const { xml: x } = await exportXML({ plan: productionPlan, onStep: (s) => setStep(s.id - 1) })
       setXml(x)
       setExportXML(x)
       setPhase('done')
@@ -39,96 +38,121 @@ export default function XmlExportScreen() {
     }
   }
 
+  const fileName = `${(productionPlan?.title || 'viralhook').replace(/\s+/g, '_')}.xml`
   const downloadXML = () => {
-    const blob = new Blob([xml], { type: 'application/xml' })
-    const url = URL.createObjectURL(blob)
+    const url = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `${(productionPlan?.title || 'viralhook').replace(/\s+/g, '_')}.xml`
+    a.download = fileName
     a.click()
     URL.revokeObjectURL(url)
   }
 
   const s = MOCK_XML_SUMMARY
+  const contents = [
+    ['Timeline', s.timeline], [`${s.clips} clips`, true], ['Timestamps', s.timestamps], ['Clip ordering', s.clipOrdering],
+    ['Trims / cuts', s.trimsAndCuts], ['Captions', s.captions], [`${s.audioTracks} audio track`, true], [s.transitions, true],
+  ]
 
   return (
-    <Page>
-      <div className="max-w-xl mx-auto">
-        <SectionHeader icon={FileCode} title="XML Export" subtitle="Export your production plan as an Adobe Premiere Pro project." />
+    <Page art="xml">
+      <PageHero
+        step="04"
+        label="Output"
+        title={['Premiere', 'Project']}
+        topic={selectedTopic?.topic}
+        lead="An XML timeline you import into Adobe Premiere Pro and finish with your own footage."
+      />
 
-        {error && <Alert type="error">{error}</Alert>}
+      {error && <Alert type="error" className="mb-6 max-w-3xl">{error}</Alert>}
 
-        {/* Plan summary */}
-        {phase === 'idle' && (
-          <Card className="p-6 mb-4 animate-fadeIn">
-            <h3 className="text-discord-white font-semibold mb-3">Production Plan Ready</h3>
-            <p className="text-discord-muted text-sm mb-1">{productionPlan?.title}</p>
-            <p className="text-discord-muted text-xs mb-4">{productionPlan?.scenes?.length} scenes · {productionPlan?.totalDuration}</p>
-            <Btn size="lg" className="w-full" icon={FileCode} onClick={startExport}>
-              Generate XML
-            </Btn>
-          </Card>
-        )}
-
-        {/* Generating */}
-        {phase === 'generating' && (
-          <Card className="p-8 animate-fadeIn">
-            <div className="flex items-center gap-3 mb-6">
-              <FileCode size={20} className="text-discord-blurple animate-pulse" />
-              <h3 className="text-discord-white font-semibold">Building XML project…</h3>
+      {phase === 'idle' && (
+        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <Card className="p-6 sm:p-8">
+            <p className="font-mono text-[13px] font-bold uppercase tracking-[0.1em] text-vh-accent2">Ready to export</p>
+            <h2 className="display mt-3 text-[clamp(2.2rem,3.6vw,3rem)]">{productionPlan?.title || 'Your plan'}</h2>
+            <div className="relative mt-5 h-36 overflow-hidden rounded-xl border-2 border-vh-night bg-vh-cream">
+              <TimelinePreview scenes={productionPlan?.scenes || []} />
             </div>
-            <ProgressSteps steps={EXPORT_STEPS} currentStep={step} />
+            <dl className="mt-5 grid grid-cols-3 gap-3">
+              <Tile label="Scenes" value={productionPlan?.scenes?.length ?? '—'} />
+              <Tile label="Duration" value={productionPlan?.totalDuration || '—'} />
+              <Tile label="Tracks" value="V1 · V2 · A1" />
+            </dl>
+            <Btn size="lg" icon={FileCode} className="mt-7" onClick={startExport}>Generate XML</Btn>
           </Card>
-        )}
+          <TracksPanel />
+        </div>
+      )}
 
-        {/* Done */}
-        {phase === 'done' && (
-          <div className="animate-fadeIn space-y-4">
-            <Card className="p-6 border-discord-green/30">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-discord-green/15 flex items-center justify-center">
-                  <CheckCircle size={20} className="text-discord-green" />
-                </div>
-                <div>
-                  <h3 className="text-discord-white font-bold">XML Project Ready</h3>
-                  <p className="text-discord-green text-xs">All tracks generated successfully</p>
-                </div>
-              </div>
+      {phase === 'generating' && (
+        <JobProgress icon={FileCode} title="Building your Premiere project" steps={EXPORT_STEPS} currentStep={step}
+          hint="Usually done in a few seconds." />
+      )}
 
-              {/* Contents checklist */}
-              <div className="grid grid-cols-2 gap-2 mb-5">
-                {[
-                  ['Timeline', s.timeline],
-                  [`${s.clips} clips`, true],
-                  ['Timestamps', s.timestamps],
-                  ['Clip ordering', s.clipOrdering],
-                  ['Trims / cuts', s.trimsAndCuts],
-                  ['Captions', s.captions],
-                  [`${s.audioTracks} audio track`, true],
-                  [s.transitions, true],
-                ].map(([label, ok]) => (
-                  <div key={label} className={`flex items-center gap-2 text-xs ${ok ? 'text-discord-text' : 'text-discord-faint line-through'}`}>
-                    <CheckCircle size={12} className={ok ? 'text-discord-green' : 'text-discord-faint'} />
-                    {label}
-                  </div>
-                ))}
-              </div>
+      {phase === 'done' && (
+        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <Card className="p-6 sm:p-8">
+            <p className="font-mono text-[13px] font-bold uppercase tracking-[0.1em] text-vh-accent2">Project ready</p>
+            <p className="display mt-3 break-all text-[clamp(1.9rem,3vw,2.5rem)]">{fileName}</p>
+            <ul className="mt-6 grid grid-cols-2 gap-3">
+              {contents.map(([label, ok]) => (
+                <li key={label} className={`flex items-center gap-2 rounded-lg bg-vh-cream px-3 py-2.5 text-[15px] font-semibold ${ok ? '' : 'line-through decoration-2'}`}>
+                  {ok ? <Check size={16} strokeWidth={3} /> : <Minus size={16} />}{label}
+                </li>
+              ))}
+            </ul>
+            <Btn size="lg" icon={Download} className="mt-7" onClick={downloadXML}>Download XML</Btn>
+          </Card>
+          <Card tone="dark" className="p-6 sm:p-8">
+            <p className="font-mono text-[13px] font-semibold uppercase tracking-[0.08em] text-vh-accent">Next</p>
+            <h2 className="display mt-3 text-[2.6rem]">Import into Premiere Pro</h2>
+            <ol className="mt-5 space-y-4">
+              {['File → Import → choose the .xml file.', 'V1 holds colour placeholders — replace them with your footage.', 'V2 is the caption layer, A1 the voiceover slots.'].map((t, i) => (
+                <li key={t} className="flex gap-4">
+                  <span className="display w-9 shrink-0 text-[2rem] leading-none text-vh-accent">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="text-[16px] leading-relaxed">{t}</span>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
+      )}
 
-              <Btn size="lg" className="w-full" icon={Download} onClick={downloadXML}>
-                Download XML
-              </Btn>
-            </Card>
-
-            <Alert type="info">
-              <span className="font-semibold">Importing into Premiere Pro:</span> File → Import → select the .xml file. V1 = colour placeholder clips (replace with footage), V2 = caption layers, A1 = voiceover slots.
-            </Alert>
-
-            <Btn variant="secondary" className="w-full" icon={ChevronRight} onClick={() => navigate('publish')}>
-              Continue to Publish
-            </Btn>
-          </div>
-        )}
-      </div>
+      <ActionBar actions={<>
+        <Btn variant="secondary" icon={ArrowLeft} onClick={() => navigate('output')}>Other output</Btn>
+        <Btn size="lg" iconRight={ArrowRight} disabled={phase !== 'done'} onClick={() => navigate('publish')}>Continue to publish</Btn>
+      </>}>
+        <Stat label="Scenes" value={productionPlan?.scenes?.length ?? '—'} />
+        <Stat label="Duration" value={productionPlan?.totalDuration || '—'} />
+        <Stat label="Format" value="Premiere XML" />
+      </ActionBar>
     </Page>
+  )
+}
+
+/** Black panel: what each track of the exported timeline holds. */
+function TracksPanel() {
+  const tracks = [
+    ['V2', 'Captions', 'Short caption per scene, timed to the voiceover'],
+    ['V1', 'Clips', 'Colour placeholders in scene order, trimmed to length'],
+    ['A1', 'Voice', 'One voiceover slot per scene'],
+  ]
+  return (
+    <Card tone="dark" className="p-6 sm:p-8">
+      <p className="font-mono text-[13px] font-semibold uppercase tracking-[0.08em] text-vh-accent">What's inside</p>
+      <h2 className="display mt-3 text-[2.6rem]">Three tracks, ready</h2>
+      <ul className="mt-5 space-y-3">
+        {tracks.map(([id, name, text]) => (
+          <li key={id} className="flex items-start gap-4 rounded-xl bg-vh-frame px-4 py-3">
+            <span className="display w-9 shrink-0 text-[2rem] leading-none text-vh-accent">{id}</span>
+            <div>
+              <p className="text-[16px] font-bold">{name}</p>
+              <p className="text-[14px]">{text}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }

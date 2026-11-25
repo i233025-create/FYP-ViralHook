@@ -84,3 +84,50 @@ class LoginAttempt(Base):
     email: Mapped[str] = mapped_column(String(320))
     ip: Mapped[str] = mapped_column(String(64))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Subscription(Base):
+    """A user's paid plan. No row = the Free plan."""
+    __tablename__ = "subscriptions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    plan: Mapped[str] = mapped_column(String(16))                 # backend/plans.py id
+    interval: Mapped[str] = mapped_column(String(8), default="month")
+    status: Mapped[str] = mapped_column(String(16), default="active")   # active | past_due | canceled
+    current_period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    current_period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String(24), default="demo")
+    provider_customer_id: Mapped[str] = mapped_column(String(128), default="")
+    provider_subscription_id: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class UsageEvent(Base):
+    """One metered action (a script generation, a render, a research run)."""
+    __tablename__ = "usage_events"
+    __table_args__ = (Index("ix_usage_events_user_meter_at", "user_id", "meter", "at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    meter: Mapped[str] = mapped_column(String(16))     # script | render | research
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    note: Mapped[str] = mapped_column(String(255), default="")
+
+
+class CheckoutSession(Base):
+    """A started checkout; completed by the payment provider's webhook (or the demo provider)."""
+    __tablename__ = "checkout_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    plan: Mapped[str] = mapped_column(String(16))
+    interval: Mapped[str] = mapped_column(String(8))
+    currency: Mapped[str] = mapped_column(String(3))
+    amount: Mapped[int] = mapped_column()
+    provider: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(16), default="open")   # open | paid | failed | expired
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

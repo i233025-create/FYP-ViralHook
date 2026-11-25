@@ -56,6 +56,7 @@ function detailMessage(detail) {
       return field ? `${field}: ${d.msg}` : d.msg
     }).join(' ')
   }
+  if (typeof detail === 'object' && detail.message) return detail.message
   return String(detail)
 }
 
@@ -98,7 +99,13 @@ async function request(path, { method = 'GET', json, form, retry = true } = {}) 
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new ApiError(detailMessage(err.detail) || `Server error ${res.status}`, res.status)
+    const error = new ApiError(detailMessage(err.detail) || `Server error ${res.status}`, res.status)
+    // 402 = a plan limit is used up: the app shows the upgrade pop-up wherever it happened
+    if (res.status === 402 && typeof err.detail === 'object') {
+      error.billing = err.detail
+      window.dispatchEvent(new CustomEvent('vh:out-of-credits', { detail: err.detail }))
+    }
+    throw error
   }
   return res.status === 204 ? null : res.json()
 }
@@ -478,4 +485,113 @@ export async function getContentHistory() {
 export async function generateCaption({ topic }) {
   await delay(600)
   return { caption: MOCK_CAPTION(topic) }
+}
+
+// ── Billing (backend/billing.py) ──────────────────────────────────────────────
+// Offline demo (VITE_USE_REAL_BACKEND=false) keeps a fake plan in memory so the
+// pricing, checkout and billing pages can still be shown.
+
+const MOCK_PLANS = [
+  { id: 'free', name: 'Free', tagline: 'Try ViralHook with your own style', highlight: false,
+    prices: { PKR: { month: 0, year: 0 }, USD: { month: 0, year: 0 } },
+    limits: { script: 5, render: 0, research: 3 },
+    features: { xml_export: true, creator_photos: false, publish: false, schedule: false, profiles: 1 } },
+  { id: 'creator', name: 'Creator', tagline: 'For creators posting every week', highlight: true,
+    prices: { PKR: { month: 1999, year: 19990 }, USD: { month: 9, year: 90 } },
+    limits: { script: 50, render: 10, research: 30 },
+    features: { xml_export: true, creator_photos: true, publish: true, schedule: false, profiles: 1 } },
+  { id: 'pro', name: 'Pro', tagline: 'For daily posting and small teams', highlight: false,
+    prices: { PKR: { month: 4999, year: 49990 }, USD: { month: 19, year: 190 } },
+    limits: { script: null, render: 40, research: 100 },
+    features: { xml_export: true, creator_photos: true, publish: true, schedule: true, profiles: 3 } },
+]
+const mockBilling = { plan: 'free', used: { script: 2, render: 0, research: 1 }, cancelAtPeriodEnd: false, sessions: {} }
+
+function mockMe() {
+  const plan = MOCK_PLANS.find((p) => p.id === mockBilling.plan)
+  const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0)
+  const end = new Date(start); end.setMonth(end.getMonth() + 1)
+  const usage = Object.fromEntries(Object.entries(plan.limits).map(([m, limit]) => {
+    const used = mockBilling.used[m] || 0
+    return [m, { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) }]
+  }))
+  return {
+    plan, usage, demoPayments: true,
+    period: { start: start.toISOString(), end: end.toISOString() },
+    subscription: plan.id === 'free' ? null : { plan: plan.id, interval: 'month', status: 'active',
+      currentPeriodEnd: end.toISOString(), cancelAtPeriodEnd: mockBilling.cancelAtPeriodEnd, provider: 'demo' },
+  }
+}
+
+export async function getPlans() {
+  if (!USE_REAL_BACKEND) return { plans: MOCK_PLANS, currencies: ['PKR', 'USD'], intervals: ['month', 'year'] }
+  return request('/billing/plans')
+}
+
+export async function getBilling() {
+  if (!USE_REAL_BACKEND) return mockMe()
+  return request('/billing/me')
+}
+
+export async function getUsageHistory() {
+  if (!USE_REAL_BACKEND) {
+    const now = Date.now()
+    return { events: [
+      { meter: 'script', at: new Date(now - 3600e3).toISOString(), note: 'Rs 50 vs Rs 500 kulfi' },
+      { meter: 'research', at: new Date(now - 86400e3).toISOString(), note: 'Food reviews' },
+      { meter: 'script', at: new Date(now - 2 * 86400e3).toISOString(), note: 'Sahiwal kulfi review' },
+    ] }
+  }
+  return request('/billing/usage')
+}
+
+/** POST /billing/checkout → { sessionId, url } (the provider's hosted checkout, or our demo page) */
+export async function startCheckout({ plan, interval, currency }) {
+  if (!USE_REAL_BACKEND) {
+    const sessionId = 'mock_' + Date.now()
+    const p = MOCK_PLANS.find((x) => x.id === plan)
+    mockBilling.sessions[sessionId] = { status: 'open', plan, interval, currency, amount: p.prices[currency][interval] }
+    return { sessionId, url: `/checkout/demo?session=${sessionId}`, demo: true }
+  }
+  return request('/billing/checkout', { method: 'POST', json: { plan, interval, currency } })
+}
+
+export async function getCheckout(sessionId) {
+  if (!USE_REAL_BACKEND) return { sessionId, ...mockBilling.sessions[sessionId] }
+  return request(`/billing/checkout/${sessionId}`)
+}
+
+/** Demo provider only: plays the payment provider's "paid" / "failed" webhook. */
+export async function completeDemoCheckout(sessionId, outcome) {
+  if (!USE_REAL_BACKEND) {
+    await delay(900)
+    const s = mockBilling.sessions[sessionId]
+    if (s && s.status === 'open') {
+      s.status = outcome === 'paid' ? 'paid' : 'failed'
+      if (s.status === 'paid') { mockBilling.plan = s.plan; mockBilling.cancelAtPeriodEnd = false }
+    }
+    return { status: s?.status || 'failed' }
+  }
+  return request('/billing/demo/complete', { method: 'POST', json: { sessionId, outcome } })
+}
+
+export async function cancelSubscription() {
+  if (!USE_REAL_BACKEND) { mockBilling.cancelAtPeriodEnd = true; return mockMe() }
+  return request('/billing/cancel', { method: 'POST' })
+}
+
+export async function resumeSubscription() {
+  if (!USE_REAL_BACKEND) { mockBilling.cancelAtPeriodEnd = false; return mockMe() }
+  return request('/billing/resume', { method: 'POST' })
+}
+
+/** POST /auth/change-password (signs out other devices) */
+export async function changePassword(currentPassword, newPassword) {
+  if (!USE_REAL_BACKEND) { await delay(600); return null }
+  return request('/auth/change-password', { method: 'POST', json: { current_password: currentPassword, new_password: newPassword } })
+}
+
+export async function logoutEverywhere() {
+  if (!USE_REAL_BACKEND) return null
+  return request('/auth/logout-all', { method: 'POST' })
 }

@@ -2,33 +2,148 @@
 @tailwind components;
 @tailwind utilities;
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Theme tokens ─────────────────────────────────────────────────────────────
+   "Mustard studio" theme from ui_demo/: cream page, black panels, mustard
+   highlights, red step badges. RGB channels so Tailwind can apply opacity
+   (bg-vh-accent/20). All text on the cream page is black (no grey text). */
+:root {
+  color-scheme: light;
+  --vh-night: 30 30 30;        /* #1E1E1E black panels, header, borders */
+  --vh-cream: 241 236 228;     /* #F1ECE4 page */
+  --vh-frame: 46 46 46;        /* #2E2E2E locked film frames, tiles on black */
+  --vh-pale: 243 216 176;      /* #F3D8B0 pale mustard (background art) */
 
-html, body, #root { height: 100%; width: 100%; }
-
-body {
-  font-family: 'Inter', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  background-color: #313338;
-  color: #DBDEE1;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --vh-bg: var(--vh-cream);
+  --vh-surface: 255 255 255;   /* white cards */
+  --vh-raised: 241 236 228;    /* cream tiles inside cards */
+  --vh-input: 241 236 228;
+  --vh-line: 30 30 30;
+  --vh-text: 30 30 30;
+  --vh-strong: 30 30 30;
+  --vh-head: 30 30 30;
+  --vh-title: 30 30 30;
+  --vh-muted: 30 30 30;        /* labels: black too (no grey text) */
+  --vh-faint: 30 30 30;
+  --vh-edge: 30 30 30;
+  --vh-accent: 243 166 65;     /* #F3A641 mustard */
+  --vh-accent-hover: 247 184 99;
+  --vh-accent-end: 243 166 65;
+  --vh-accent2: 217 43 58;     /* #D92B3A red */
+  --vh-ink: 30 30 30;          /* text on mustard */
+  --vh-steel: 30 30 30;
+  --vh-art: 208 202 193;       /* #D0CAC1 background line art */
+  --vh-ok: 30 30 30;
+  --vh-warn: 184 107 12;       /* dark mustard, readable on cream */
+  --vh-bad: 217 43 58;
+  --vh-info: 30 30 30;
+  --vh-seg-hook: 243 166 65;
+  --vh-seg-setup: 30 30 30;
+  --vh-seg-main: 217 43 58;
+  --vh-seg-evidence: 138 129 120;  /* #8A8178 taupe */
+  --vh-seg-cta: 30 30 30;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1e1f22; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #111214; }
+/* Black panels (hero card, action bar, dark option card…): the same kit
+   components render cream-on-black inside them. */
+.on-dark {
+  --vh-surface: 30 30 30;
+  --vh-raised: 46 46 46;
+  --vh-input: 46 46 46;
+  --vh-line: 241 236 228;
+  --vh-text: 241 236 228;
+  --vh-strong: 241 236 228;
+  --vh-head: 241 236 228;
+  --vh-title: 241 236 228;
+  --vh-muted: 241 236 228;
+  --vh-faint: 241 236 228;
+  --vh-edge: 241 236 228;
+  --vh-ok: 241 236 228;
+  --vh-info: 241 236 228;
+  --vh-warn: 243 166 65;
+  --vh-seg-setup: 241 236 228;
+  --vh-seg-cta: 241 236 228;
+  color: rgb(var(--vh-text));
+}
+/* back to the light values inside a light card placed on a dark panel */
+.on-light {
+  --vh-surface: 255 255 255;
+  --vh-raised: 241 236 228;
+  --vh-input: 241 236 228;
+  --vh-line: 30 30 30;
+  --vh-text: 30 30 30;
+  --vh-strong: 30 30 30;
+  --vh-head: 30 30 30;
+  --vh-title: 30 30 30;
+  --vh-muted: 30 30 30;
+  --vh-faint: 30 30 30;
+  --vh-edge: 30 30 30;
+  --vh-ok: 30 30 30;
+  --vh-info: 30 30 30;
+  --vh-warn: 184 107 12;
+  --vh-seg-setup: 30 30 30;
+  --vh-seg-cta: 30 30 30;
+  color: rgb(var(--vh-text));
+}
 
-/* File input */
-input[type="file"] { display: none; }
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-vh-bg text-vh-text font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";   /* Inter: straight-sided 1, open digits */
+  }
+  ::selection { @apply bg-vh-accent text-vh-ink; }
+  :focus-visible { @apply outline-none ring-2 ring-vh-accent ring-offset-2 ring-offset-vh-bg; }
+  input[type="file"] { display: none; }
+  select option { background: #fff; color: rgb(var(--vh-night)); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--vh-night) / 0.35); border-radius: 999px; border: 3px solid rgb(var(--vh-cream)); }
+}
 
-/* Animations */
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@layer components {
+  /* Page titles: Bebas Neue, as in the design references */
+  .display {
+    font-family: theme('fontFamily.display');
+    font-weight: 400;
+    letter-spacing: 0.005em;
+    line-height: 0.9;
+    text-transform: uppercase;
+  }
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-vh-muted;
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .heading-glow { color: rgb(var(--vh-title)); }
 
-.animate-fadeIn  { animation: fadeIn  0.25s ease-out both; }
-.animate-slideUp { animation: slideUp 0.3s  ease-out both; }
+  /* kept so older markup stays valid; the light theme has no cursor glow / sweep */
+  .spot {}
+  .btn-shine {}
 
-/* Select option dark background */
-select option { background-color: #1e1f22; color: #dbdee1; }
+  /* Film-strip sprocket holes: a row of cream dashes */
+  .sprockets {
+    height: 9px;
+    background-image: linear-gradient(90deg, rgb(var(--vh-cream)) 0 22px, transparent 22px 100%);
+    background-size: 40px 9px;
+    background-repeat: repeat-x;
+  }
+  .sprockets-dark {
+    height: 9px;
+    background-image: linear-gradient(90deg, rgb(var(--vh-night)) 0 22px, transparent 22px 100%);
+    background-size: 40px 9px;
+    background-repeat: repeat-x;
+  }
+  /* Clapperboard stripes along the top of a hero card */
+  .clapper {
+    background-color: rgb(var(--vh-night));
+    background-image: repeating-linear-gradient(-60deg,
+      rgb(var(--vh-night)) 0 26px, rgb(var(--vh-cream)) 26px 58px);
+  }
+
+  /* Background illustrations (components/art) */
+  .art      { color: rgb(var(--vh-art)); }
+  .art-line { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

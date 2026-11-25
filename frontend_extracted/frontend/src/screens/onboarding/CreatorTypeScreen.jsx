@@ -1,78 +1,65 @@
-import { Sparkles, TrendingUp, ChevronRight } from 'lucide-react'
+import { Clock, KeyRound, Film, Target } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { Btn } from '../../components/ui'
-
-const TYPES = [
-  {
-    id: 'new',
-    icon: Sparkles,
-    title: 'New Creator',
-    subtitle: "I'm just getting started",
-    description: "Tell us your niche and content preferences. We'll build your initial style profile and help you create your first viral-ready content.",
-    bullets: ['Quick niche setup', 'Style profile from preferences', 'Jump straight into content creation'],
-    color: 'text-discord-green',
-    bg: 'bg-discord-green/10',
-    border: 'hover:border-discord-green/60',
-    screen: 'onboarding-new',
-  },
-  {
-    id: 'experienced',
-    icon: TrendingUp,
-    title: 'Experienced Creator',
-    subtitle: 'I have existing content',
-    description: "Upload your past videos. We'll analyse your transcripts, extract your unique style, hooks, and structure to create a personalised creator profile.",
-    bullets: ['Upload historical videos', 'AI-powered style extraction', 'Personalised creator knowledge base'],
-    color: 'text-discord-blurple',
-    bg: 'bg-discord-blurple/10',
-    border: 'hover:border-discord-blurple/60',
-    screen: 'onboarding-experienced',
-  },
-]
+import { Page, PageHero, Badge } from '../../components/ui'
+import { NichePreview, OptionCard, OptionGrid, ReelGridPreview, UploadPreview } from '../../components/previews'
 
 export default function CreatorTypeScreen() {
-  const { navigate } = useApp()
+  const { navigate, user } = useApp()
+  const first = user?.name?.split(' ')[0]
 
   return (
-    <div className="flex h-screen w-screen bg-discord-dark items-center justify-center p-6">
-      <div className="w-full max-w-2xl">
-        <div className="text-center mb-10">
-          <h1 className="text-discord-white font-bold text-3xl mb-2">What kind of creator are you?</h1>
-          <p className="text-discord-muted text-base">Choose how you want to get started with ViralHook.</p>
-        </div>
+    <Page art="onboarding" width="max-w-6xl">
+      <PageHero
+        label="Set up"
+        title={['Welcome,', first || 'creator']}
+        lead="ViralHook writes in your own voice, so it first needs to learn how you make videos. Choose how to start — you can change this later."
+      />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {TYPES.map(({ id, icon: Icon, title, subtitle, description, bullets, color, bg, border, screen }) => (
-            <button
-              key={id}
-              onClick={() => navigate(screen)}
-              className={`
-                flex flex-col text-left p-6 rounded-2xl
-                bg-discord-sidebar border border-discord-faint/25
-                ${border} hover:shadow-xl hover:-translate-y-1
-                transition-all duration-200 group
-              `}
-            >
-              <div className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${bg} mb-4`}>
-                <Icon size={24} className={color} />
-              </div>
-              <h2 className="text-discord-white font-bold text-lg mb-0.5">{title}</h2>
-              <p className={`text-sm font-medium mb-3 ${color}`}>{subtitle}</p>
-              <p className="text-discord-muted text-sm leading-relaxed mb-4">{description}</p>
-              <ul className="space-y-1.5 mb-5">
-                {bullets.map((b) => (
-                  <li key={b} className="flex items-center gap-2 text-discord-muted text-xs">
-                    <span className={`w-1 h-1 rounded-full flex-shrink-0 ${color.replace('text-', 'bg-')}`} />
-                    {b}
-                  </li>
-                ))}
-              </ul>
-              <div className={`flex items-center gap-1 text-sm font-semibold mt-auto ${color} group-hover:gap-2 transition-all`}>
-                Get started <ChevronRight size={16} />
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
+      <OptionGrid cols={3}>
+        <OptionCard
+          number="01"
+          kicker="About a minute"
+          title="Connect Instagram"
+          line="We import your reels and captions and learn your style from them."
+          badge={<Badge color="muted">Coming soon</Badge>}
+          preview={<ReelGridPreview />}
+          specs={[
+            { icon: Clock, label: 'Takes', value: 'About a minute' },
+            { icon: KeyRound, label: 'You need', value: 'Business or Creator account' },
+          ]}
+          bestFor="Creators already posting reels"
+          disabled
+        />
+        <OptionCard
+          number="02"
+          kicker="A few minutes"
+          title="Upload your videos"
+          line="Add a few past videos; we transcribe them and measure how you talk, hook and pace."
+          badge={<Badge color="pop">Recommended</Badge>}
+          preview={<UploadPreview />}
+          specs={[
+            { icon: Clock, label: 'Takes', value: 'A few minutes' },
+            { icon: Film, label: 'You need', value: '3–10 of your videos' },
+          ]}
+          bestFor="The most accurate style match"
+          cta="Upload"
+          onClick={() => navigate('onboarding-experienced')}
+        />
+        <OptionCard
+          number="03"
+          kicker="30 seconds"
+          title="I'm just starting"
+          line="No videos yet? Pick your niche; style scores appear once you have videos."
+          preview={<NichePreview />}
+          specs={[
+            { icon: Clock, label: 'Takes', value: '30 seconds' },
+            { icon: Target, label: 'You need', value: 'Just your niche' },
+          ]}
+          bestFor="New creators"
+          cta="Start"
+          onClick={() => navigate('onboarding-new')}
+        />
+      </OptionGrid>
+    </Page>
   )
 }

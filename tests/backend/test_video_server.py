@@ -180,3 +180,20 @@ def test_other_users_cannot_use_or_see_photos(asset_client, sample_production_pl
     res = other.post("/video/generate", json={"plan": sample_production_plan,
                                               "assetLibraryId": data["libraryId"]})
     assert res.status_code == 404
+
+
+def test_failed_render_refunds_the_credit(client, monkeypatch, sample_production_plan):
+    import pipeline.agents.video_agent as agent
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("GPU out of memory")
+    monkeypatch.setattr(agent, "generate_video", broken)
+    job_id = client.post("/video/generate", json={"plan": sample_production_plan}).json()["jobId"]
+    assert _wait(client, job_id)["status"] == "error"
+    assert client.get("/billing/me").json()["usage"]["render"]["used"] == 0
+
+
+def test_successful_render_uses_one_credit(client, sample_production_plan):
+    job_id = client.post("/video/generate", json={"plan": sample_production_plan}).json()["jobId"]
+    assert _wait(client, job_id)["status"] == "done"
+    assert client.get("/billing/me").json()["usage"]["render"]["used"] == 1

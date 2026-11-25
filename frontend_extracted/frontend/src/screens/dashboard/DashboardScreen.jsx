@@ -1,162 +1,145 @@
 import { useEffect, useState } from 'react'
-import { Plus, TrendingUp, FileText, Clock, CheckCircle, Film, BarChart2, Users } from 'lucide-react'
+import { Plus, Film, ArrowRight, Play } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { getContentHistory } from '../../services/api'
-import { Btn, Badge, Card, Page } from '../../components/ui'
+import { Btn, Badge, Card, Page, SectionTitle, EmptyState, StepChip, Tile } from '../../components/ui'
+import { CountUp, Stagger, StaggerItem } from '../../components/motion'
 
-const STATUS_COLOR = {
-  Published: 'green',
-  Scheduled: 'blurple',
-  Draft:     'muted',
-  Processing:'yellow',
-  Failed:    'red',
-}
+const STATUS_TONE = { Published: 'ok', Scheduled: 'info', Draft: 'muted', Processing: 'warn', Failed: 'bad' }
 
 export default function DashboardScreen() {
-  const { creatorProfile, navigate } = useApp()
+  const { creatorProfile, user, navigate } = useApp()
   const [history, setHistory] = useState([])
+  const [showSummary, setShowSummary] = useState(false)
 
   useEffect(() => {
-    getContentHistory().then(({ history: h }) => setHistory(h))
+    getContentHistory().then(({ history: h }) => setHistory(h)).catch(() => setHistory([]))
   }, [])
 
   if (!creatorProfile) return null
+  const first = (user?.name || creatorProfile.name || '').split(' ')[0]
+  const raw = creatorProfile.rawProfile || {}
+  const visual = raw.visual_analysis
+  const audio = raw.audio_analysis
 
   const stats = [
-    { label: 'Published', value: creatorProfile.published, icon: CheckCircle, color: 'text-discord-green' },
-    { label: 'Scheduled', value: creatorProfile.scheduled, icon: Clock, color: 'text-discord-blurple' },
-    { label: 'Drafts',    value: creatorProfile.drafts,    icon: FileText, color: 'text-discord-muted' },
-    { label: 'Videos Analysed', value: creatorProfile.analyzedVideos, icon: Film, color: 'text-purple-400' },
+    { label: 'Published', value: creatorProfile.published },
+    { label: 'Scheduled', value: creatorProfile.scheduled },
+    { label: 'Drafts', value: creatorProfile.drafts },
+    { label: 'Videos analysed', value: creatorProfile.analyzedVideos, hl: true },
   ]
 
   return (
-    <Page>
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
-          <div>
-            <h1 className="text-discord-white font-bold text-2xl">
-              Welcome back, {creatorProfile.name?.split(' ')[0]} 👋
-            </h1>
-            <p className="text-discord-muted text-sm mt-1">
+    <Page art="dashboard">
+      {/* Clapperboard hero */}
+      <section className="on-dark overflow-hidden rounded-2xl bg-vh-night shadow-accent">
+        <div className="clapper h-9 sm:h-11" aria-hidden="true" />
+        <div className="grid gap-8 px-6 pb-9 pt-7 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:items-center">
+          <Stagger gap={0.07}>
+            <StaggerItem><StepChip label="Studio · Workspace" /></StaggerItem>
+            <StaggerItem as="h1" className="mt-4">
+              <span className="display block text-[clamp(3.2rem,8vw,6.6rem)] text-vh-cream">Welcome back{first ? ',' : ''}</span>
+              {first && <span className="display block text-[clamp(3.2rem,8vw,6.6rem)] text-vh-accent">{first}</span>}
+            </StaggerItem>
+            <StaggerItem as="p" className="mt-4 font-mono text-[15px] text-vh-cream">
               {creatorProfile.handle} · {creatorProfile.niche}
-            </p>
+            </StaggerItem>
+            <StaggerItem className="mt-6">
+              <Btn size="lg" icon={Plus} onClick={() => navigate('ideation')}>Create new video</Btn>
+            </StaggerItem>
+          </Stagger>
+
+          <Stagger as="dl" className="grid grid-cols-2 gap-3 sm:gap-4">
+            {stats.map(({ label, value, hl }) => (
+              <StaggerItem key={label}
+                className={`flex min-h-[6.5rem] items-end justify-between gap-2 rounded-xl px-4 pb-4 pt-3 ${hl ? 'bg-vh-accent' : 'bg-vh-cream'} text-vh-night`}>
+                <dt className="font-mono text-[13px]">{label}</dt>
+                <dd className="display text-[3.6rem] leading-[0.8] tabular"><CountUp value={value ?? '—'} /></dd>
+              </StaggerItem>
+            ))}
+          </Stagger>
+        </div>
+      </section>
+
+      <div className="mt-12 grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+        {/* Creator profile */}
+        <Card className="p-6 sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="display text-[clamp(2rem,3.4vw,2.6rem)]">Your creator profile</h2>
+            {creatorProfile.niche && <Badge color="pop" size="md" className="max-w-[50%]"><span className="truncate">{creatorProfile.niche}</span></Badge>}
           </div>
-          <Btn icon={Plus} size="lg" onClick={() => navigate('ideation')}>
-            Create New Video
-          </Btn>
-        </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {stats.map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide">{label}</p>
-                <Icon size={16} className={color} />
-              </div>
-              <p className="text-discord-white font-bold text-2xl">{value}</p>
+          <div className="mt-5 flex items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-vh-night bg-vh-accent text-xl font-bold">
+              {(creatorProfile.name || creatorProfile.handle || 'C').replace('@', '')[0]?.toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xl font-bold">{creatorProfile.name || creatorProfile.handle}</p>
+              <p className="truncate font-mono text-sm">{creatorProfile.handle}</p>
+            </div>
+          </div>
+
+          <dl className="mt-6 grid grid-cols-2 gap-3">
+            <Tile label="Signature hook" value={creatorProfile.dominantHookType} />
+            <Tile label="Structure" value={creatorProfile.dominantStructure} />
+            <Tile label="Speech rate" value={audio ? `${Math.round(audio.mean_speech_rate_wpm)} wpm` : null} />
+            <Tile label="Average shot" value={visual ? `${visual.mean_avg_shot_duration?.toFixed(1)} s` : null} />
+          </dl>
+
+          {creatorProfile.styleSummary && (
+            <p className="mt-6 text-[16px] leading-relaxed">
+              <span className={showSummary ? '' : 'line-clamp-3'}>{creatorProfile.styleSummary}</span>
+              <button type="button" onClick={() => setShowSummary((v) => !v)}
+                className="mt-1 font-bold underline underline-offset-4 hover:text-vh-accent2">
+                {showSummary ? 'Show less' : 'Read more'}
+              </button>
+            </p>
+          )}
+        </Card>
+
+        {/* Recent content */}
+        <section>
+          <SectionTitle right={history.length > 0 && (
+            <button type="button" onClick={() => navigate('ideation')} className="mb-1 text-[17px] font-bold underline underline-offset-4 hover:text-vh-accent2">
+              + New
+            </button>
+          )}>Recent content</SectionTitle>
+          {history.length === 0 ? (
+            <Card shadow={false}>
+              <EmptyState icon={Film} title="No videos yet"
+                action={<Btn variant="secondary" iconRight={ArrowRight} onClick={() => navigate('ideation')}>Start your first video</Btn>}>
+                Everything you create shows up here, with its scores and status.
+              </EmptyState>
             </Card>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Creator profile card */}
-          <Card className="p-5 md:col-span-1">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-discord-blurple flex items-center justify-center text-white font-bold">
-                {creatorProfile.name?.[0]?.toUpperCase()}
-              </div>
-              <div>
-                <p className="text-discord-white font-semibold text-sm">{creatorProfile.name}</p>
-                <p className="text-discord-muted text-xs">{creatorProfile.handle}</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <ProfileRow label="Niche" value={creatorProfile.niche} />
-              <ProfileRow label="Dominant Hook" value={<Badge color="purple">{creatorProfile.dominantHookType}</Badge>} />
-              <ProfileRow label="Structure" value={<span className="text-discord-text text-xs leading-tight">{creatorProfile.dominantStructure}</span>} />
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-discord-faint/20">
-              <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide mb-2">Style Summary</p>
-              <p className="text-discord-muted text-xs leading-relaxed line-clamp-4">{creatorProfile.styleSummary}</p>
-            </div>
-
-            {/* Measured by Module 2 from the creator's own videos; drives the Video Agent */}
-            {(creatorProfile.rawProfile?.visual_analysis || creatorProfile.rawProfile?.audio_analysis) && (
-              <div className="mt-4 pt-4 border-t border-discord-faint/20 space-y-3">
-                <p className="text-discord-muted text-xs font-semibold uppercase tracking-wide">Measured Style</p>
-                {creatorProfile.rawProfile.visual_analysis && (
-                  <ProfileRow label="Avg shot" value={`${creatorProfile.rawProfile.visual_analysis.mean_avg_shot_duration?.toFixed(2)}s · ${creatorProfile.rawProfile.visual_analysis.visual_pacing}`} />
-                )}
-                {creatorProfile.rawProfile.audio_analysis && (
-                  <>
-                    <ProfileRow label="Speech rate" value={`${Math.round(creatorProfile.rawProfile.audio_analysis.mean_speech_rate_wpm)} wpm`} />
-                    <ProfileRow label="Energy" value={creatorProfile.rawProfile.audio_analysis.energy_label} />
-                  </>
-                )}
-              </div>
-            )}
-
-
-          </Card>
-
-          {/* Content history */}
-          <Card className="p-5 md:col-span-2">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-discord-white font-semibold text-sm">Recent Content</h3>
-              <Btn variant="ghost" size="sm" onClick={() => navigate('ideation')}>+ New</Btn>
-            </div>
-
-            {history.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <Film size={32} className="text-discord-faint mb-3" />
-                <p className="text-discord-muted text-sm">No content yet</p>
-                <p className="text-discord-faint text-xs mt-1">Create your first video to get started</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {history.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-discord-hover transition-colors">
-                    <div className="w-8 h-8 rounded bg-discord-input flex items-center justify-center flex-shrink-0">
-                      <Film size={14} className="text-discord-muted" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-discord-white text-sm font-medium truncate">{item.title}</p>
-                      <p className="text-discord-muted text-xs">{item.date} · {item.niche}</p>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      {item.views !== '—' && (
-                        <span className="text-discord-muted text-xs flex items-center gap-1">
-                          <BarChart2 size={11} /> {item.views}
-                        </span>
-                      )}
-                      <Badge color={STATUS_COLOR[item.status] || 'muted'}>{item.status}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-4 pt-4 border-t border-discord-faint/20">
-              <Btn variant="secondary" size="sm" className="w-full" onClick={() => navigate('ideation')}>
-                <Plus size={14} /> Start New Video
-              </Btn>
-            </div>
-          </Card>
-        </div>
+          ) : (
+            <Stagger as="ul" className="space-y-4">
+              {history.map((item) => <StaggerItem as="li" key={item.id}><ContentRow item={item} /></StaggerItem>)}
+            </Stagger>
+          )}
+        </section>
       </div>
     </Page>
   )
 }
 
-function ProfileRow({ label, value }) {
+/** One video in a list: black thumbnail with a mustard play mark, title, meta, status. */
+export function ContentRow({ item }) {
+  const draft = item.status === 'Draft'
+  const views = item.views && item.views !== '-' && item.views !== '—' ? item.views : null
   return (
-    <div className="flex items-start gap-2">
-      <span className="text-discord-faint text-xs font-semibold uppercase tracking-wide w-20 flex-shrink-0 pt-0.5">{label}</span>
-      <span className="text-discord-text text-xs">{value}</span>
+    <div className={`flex items-center gap-4 rounded-xl border-2 bg-white px-4 py-4 sm:px-5 ${draft ? 'border-dashed border-vh-night' : 'border-vh-night'}`}>
+      {draft
+        ? <span className="h-16 w-14 shrink-0 rounded-md border-2 border-dashed border-vh-night" />
+        : (
+          <span className="flex h-16 w-14 shrink-0 items-center justify-center rounded-md bg-vh-night">
+            <Play size={18} className="ml-0.5 text-vh-accent" fill="currentColor" />
+          </span>
+        )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[17px] font-bold">{item.title}</p>
+        <p className="mt-1 truncate font-mono text-[13px]">{[item.date, item.niche, views && `${views} views`].filter(Boolean).join(' · ')}</p>
+      </div>
+      <Badge color={STATUS_TONE[item.status] || 'muted'} size="md">{item.status}</Badge>
     </div>
   )
 }
