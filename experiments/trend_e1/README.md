@@ -67,3 +67,65 @@ only for Business/Creator accounts.
 2. **Definition check**: on the labelled rows, compare `trend_type == "trend"` with the human label.
 3. **Forward check**: re-run 7 days later and see whether the "trend" topics are still there or grew.
 4. **Cost and coverage**: quota/calls, usable posts, creators reached (in the summary table).
+
+## Fix ablation
+
+`python experiments/trend_e1/ablation_fixes.py --queries-from 2026-11-18` runs
+the YouTube agent with old settings, each V1 fix alone, and all fixes, on one
+shared data pull (searches from cache, details fetched once, ~30 quota units).
+Output: `results/ablation_<date>.md`.
+
+## Forward check
+
+`python experiments/trend_e1/forward_check.py --from 2026-11-18` looks up
+every topic shown on that day in today's data (same queries; run `run_e1.py
+--queries-from <day>` first, so the searches are cached). Output:
+`results/forward_<day>_to_<today>.md`.
+
+## Daily runs (measured growth)
+
+Every YouTube run stores each video's view count in
+`pipeline/cache/snapshots/<niche>/<date>.json` (git-ignored) and re-reads
+the views of the videos it tracked over the last 8 days. From the second day
+on, "growing" is **measured**: how fast a cluster's videos gain views now,
+against their own lifetime pace, compared with the whole niche
+(`trend_snapshots.py`). Until a niche has a snapshot that is at least 20 hours
+old, growth is only an estimate and nothing is called a `trend`; the best a
+cluster can get is `emerging`.
+
+So run once a day, with the fixed queries from `niches.json`:
+
+```bash
+python experiments/trend_e1/run_e1.py --versions youtube
+```
+
+4 niches cost about 4,500–5,200 of the 10,000 daily quota units. The first
+day costs more, because channel baselines are fetched and then cached for a
+week. The summary shows, per topic, whether its growth is `measured` or an
+`estimate`. `labels_<date>.csv` has a `growth_source` column.
+
+On the developer's laptop this runs as the Windows scheduled task
+**"FYP Trend Daily"** (every day at 13:00, or as soon as the laptop is on
+after a missed run) via `daily_run.cmd`. Log: `pipeline/cache/daily_run.log`.
+Remove it with `schtasks /Delete /TN "FYP Trend Daily" /F`.
+
+## Urdu and Roman Urdu
+
+Each niche in `niches.json` has `"languages": ["en", "ur"]` and two
+`queries_ur`, which are searched with `relevanceLanguage=ur`. With `ur` on:
+
+- Kept: English, Urdu script (zindagi badalne wali baatein in Urdu letters), and
+  Roman Urdu ("Zindagi badal degi ye baat suno").
+- Dropped: Arabic (same script as Urdu; told apart by letters only Urdu uses,
+  such as ٹ ڈ ڑ ں ے, and letters only Arabic uses, such as ة ي ك ى), Devanagari,
+  Roman Hindi with clearly Hindi vocabulary (jeevan, safalta, pravachan…),
+  and other languages.
+- YouTube tags a lot of Pakistani Roman Urdu content `hi`. In Urdu niches such
+  a video is kept when its title is Urdu or Roman Urdu.
+- Clustering uses `paraphrase-multilingual-MiniLM-L12-v2`, so an Urdu title and
+  an English one on the same topic land in the same cluster. Its thresholds
+  (distance 0.44, creator_fit 0.50) come from
+  `calibrate_multilingual.py` (`results/calibration_multilingual_<date>.md`).
+
+`"languages": ["ur"]` keeps only Urdu and Roman Urdu, so it shows only Urdu
+trends. The extra cost is ~400 quota units per niche per day.

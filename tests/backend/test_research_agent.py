@@ -40,6 +40,14 @@ def no_llm(monkeypatch):
     monkeypatch.delenv("TREND_SOURCE", raising=False)   # default (youtube) in every test
 
 
+@pytest.fixture(autouse=True)
+def isolated_snapshots(monkeypatch, tmp_path):
+    """Snapshots go to a temp folder; the estimate-growth tests may still reach "trend"."""
+    monkeypatch.setattr(ra, "SNAPSHOT_DIR", tmp_path / "snapshots")
+    monkeypatch.setattr(ra, "REQUIRE_MEASURED_GROWTH", False)
+    monkeypatch.setattr(ra, "_fetch_view_counts", lambda ids, key: {})
+
+
 # ── [1] Queries ────────────────────────────────────────────────────────────────
 
 def test_fallback_queries_come_from_profile(sample_creator_profile):
@@ -91,9 +99,32 @@ def test_is_usable_filters_long_hidden_and_foreign():
     "#motivational #sad #thankyou #shorts",
     "जीवन में सफलता का असली मंत्र #motivation",              # Devanagari, no lang tag
     "Trust 🔥🔥 #shorts",                                     # < 3 real words
+    "Motivation नहीं, Discipline आपको सफल बनाएगा! Motivation vs Discipline",  # mixed script
 ])
 def test_is_usable_drops_uninformative_titles(title):
     assert not ra._is_usable(_video("a", title, "c", 5000, 10000))
+
+
+@pytest.mark.parametrize("title,tags", [
+    ("new training motivation quotes in hindi 😍🔥", []),
+    ("motivational quotes Kannada #kannada", []),
+    ("Best morning motivation for success #hindimotivation", []),
+    ("Powerful words that change your life", ["motivation", "urdu quotes"]),
+])
+def test_is_usable_drops_titles_naming_another_language(title, tags):
+    assert not ra._is_usable({**_video("a", title, "c", 5000, 10000), "tags": tags})
+
+
+@pytest.mark.parametrize("title", [
+    "Stop comparing yourself today #motivation",
+    "Train Smarter, Build Stronger! #homeworkout",
+])
+def test_names_other_language_ignores_plain_english(title):
+    assert not ra.names_other_language({"title": title, "tags": ["fitness"]})
+
+
+def test_is_usable_keeps_accented_latin_titles():
+    assert ra._is_usable(_video("a", "Café-style crème brûlée at home", "c", 5000, 10000))
 
 
 def test_is_usable_keeps_english_title_with_hashtags():
@@ -148,8 +179,36 @@ def test_video_text_is_clean_title_only():
     assert ra.video_text(v) == "I woke up at 5AM"
 
 
+@pytest.mark.parametrize("title", [
+    "Jeevitha satyalu Manchi matalu inspiring quotes",   # romanised Telugu (E1)
+    "Zindagi badal degi ye baat motivation",            # Hinglish
+    "Mann ki shanti ke liye ye sunlo",
+    "Nunca te rindas motivacion diaria",                 # Spanish
+])
+def test_is_usable_drops_romanised_non_english_titles(title):
+    pytest.importorskip("wordfreq")
+    assert not ra._is_usable(_video("a", title, "c", 5000, 10000))
+
+
+@pytest.mark.parametrize("title", [
+    "Train Smarter, Build Stronger! 💪",                 # langdetect called this German
+    "FULL BODY HOME WORKOUT WITH BAND & BAR! #homefitness",
+    "Bhagavad Gita motivational speech in english",
+    "5 Best Exercises to Build Muscle After 60!",
+])
+def test_is_usable_keeps_english_titles_with_names_and_caps(title):
+    pytest.importorskip("wordfreq")
+    assert ra._is_usable(_video("a", title, "c", 5000, 10000))
+
+
+def test_english_check_skipped_without_wordfreq(monkeypatch):
+    monkeypatch.setattr(ra, "_zipf_frequency", None)
+    assert ra.english_word_share("Zindagi badal degi ye baat") is None
+    assert ra._is_usable(_video("a", "Zindagi badal degi ye baat", "c", 5000, 10000))
+
+
 def test_is_usable_drops_non_latin_channel():
-    video = _video("a", "Jeevitha satyalu inspiring quotes", "విఘ్నేశ్వరాయ", 5000, 10000)
+    video = _video("a", "Powerful life quotes that inspire", "విఘ్నేశ్వరాయ", 5000, 10000)
     assert not ra._is_usable(video)
     assert ra._is_usable({**video, "channel": "🔥🔥"})   # no letters → not judged
 
@@ -415,7 +474,7 @@ def test_topic_when_spread_and_growing_but_not_overperforming():
 
 
 def test_ranking_puts_trend_before_evergreen_even_with_lower_score():
-    trend_v, _ = _cluster(3, [3_000] * 3, 1_000, hours=[5, 10, 20], prefix="a")
+    trend_v, _ = _cluster(3, [9_000] * 3, 1_000, hours=[5, 10, 20], prefix="a")
     ever_v, _ = _cluster(4, [900_000] * 4, 1_000, hours=[150, 200, 250, 300], prefix="b")
     for v in ever_v:
         v["channel_id"] = "e" + v["channel_id"]
@@ -437,9 +496,20 @@ def test_thresholds_can_be_overridden_from_env(monkeypatch):
 def test_youtube_searches_both_windows(monkeypatch):
     calls = []
     monkeypatch.setattr(ra, "_search_video_ids",
-                        lambda q, k, now, days: calls.append((q, days)) or [])
+                        lambda q, k, now, days, lang="en": calls.append((q, days)) or [])
     ra.collect_videos(["a", "b"], "key", NOW)
     assert calls == [("a", 14), ("a", 3), ("b", 14), ("b", 3)]
+
+
+def test_urdu_queries_are_searched_in_urdu_only_when_enabled(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ra, "_search_video_ids",
+                        lambda q, k, now, days, lang="en": calls.append((q, days, lang)) or [])
+    ra.collect_videos(["a"], "key", NOW, queries_ur=["zindagi"])
+    assert calls == [("a", 14, "en"), ("a", 3, "en")]
+    calls.clear()
+    ra.collect_videos(["a"], "key", NOW, languages=("en", "ur"), queries_ur=["zindagi"])
+    assert calls == [("a", 14, "en"), ("a", 3, "en"), ("zindagi", 14, "ur"), ("zindagi", 3, "ur")]
 
 
 def test_unknown_source_is_an_error(sample_creator_profile):
@@ -466,3 +536,10 @@ def test_node_output_carries_trend_type(monkeypatch, sample_creator_profile):
     ro = out["research_output"]
     assert ro["trend_type"] == "trend"
     assert set(ro["trend_checks"]) == {"overperforms", "growing", "spreading", "recent"}
+
+
+def test_tiny_channel_with_few_views_does_not_overperform():
+    # E1 fitness: 0–98-sub channels with 1.5K–7K views passed "overperforms" at floor 1000
+    tiny = _video("t", "Subscribe and transform your body today", "tiny_ch", views=5_000, subs=0)
+    ra.score_videos([tiny], NOW)
+    assert tiny["outlier"] < ra.OVERPERFORM_OUTLIER

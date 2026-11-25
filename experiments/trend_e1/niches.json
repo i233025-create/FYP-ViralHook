@@ -5,26 +5,158 @@
       "name": "motivation",
       "profile_path": "module1_style_extraction/creator_profile.json",
       "ig_creators": [
-        "garyvee", "jayshetty", "melrobbins", "tonyrobbins", "lewishowes",
-        "simonsinek", "robinsharma", "edmylett", "brendonburchard", "davidgoggins",
-        "mattdavella", "aliabdaal", "thedankoe", "jimkwik", "marieforleo"
+        "garyvee",
+        "jayshetty",
+        "melrobbins",
+        "tonyrobbins",
+        "lewishowes",
+        "simonsinek",
+        "robinsharma",
+        "edmylett",
+        "brendonburchard",
+        "davidgoggins",
+        "mattdavella",
+        "aliabdaal",
+        "thedankoe",
+        "jimkwik",
+        "marieforleo"
       ],
-      "ig_hashtags": ["motivation", "selfimprovement", "personalgrowth", "consistency", "mindset"]
+      "ig_hashtags": [
+        "motivation",
+        "selfimprovement",
+        "personalgrowth",
+        "consistency",
+        "mindset"
+      ],
+      "queries": [
+        "motivational advice",
+        "personal growth tips",
+        "self discipline tips",
+        "mindset shift",
+        "motivational quotes"
+      ],
+      "languages": [
+        "en",
+        "ur"
+      ],
+      "queries_ur": [
+        "motivational baatein",
+        "زندگی بدلنے والی باتیں"
+      ]
     },
     {
       "name": "fitness_beginners",
       "profile": {
         "creator_niche": "Beginner fitness and home workouts",
-        "recurring_topics": ["Home workouts", "Gym beginner mistakes", "Fat loss", "Muscle building", "Workout motivation"],
+        "recurring_topics": [
+          "Home workouts",
+          "Gym beginner mistakes",
+          "Fat loss",
+          "Muscle building",
+          "Workout motivation"
+        ],
         "target_audience": "Young adults starting to work out"
       },
       "ig_creators": [
-        "jeffnippard", "athleanx", "jeremyethier", "kayla_itsines", "chloe_t",
-        "blogilates", "whitneyysimmons", "sam_sulek", "chrisheria", "mikethurston",
-        "thebodycoach", "demibagby", "krissycela", "mrandmrsmuscle", "heatherrobertsoncom",
+        "jeffnippard",
+        "athleanx",
+        "jeremyethier",
+        "kayla_itsines",
+        "chloe_t",
+        "blogilates",
+        "whitneyysimmons",
+        "sam_sulek",
+        "chrisheria",
+        "mikethurston",
+        "thebodycoach",
+        "demibagby",
+        "krissycela",
+        "mrandmrsmuscle",
+        "heatherrobertsoncom",
         "pamela_rf"
       ],
-      "ig_hashtags": ["homeworkout", "fitnesstips", "gymbeginner", "fatloss", "workoutmotivation"]
+      "ig_hashtags": [
+        "homeworkout",
+        "fitnesstips",
+        "gymbeginner",
+        "fatloss",
+        "workoutmotivation"
+      ],
+      "queries": [
+        "home workout plan",
+        "beginner workout tips",
+        "muscle building tips",
+        "fat loss guide",
+        "workout motivation tips"
+      ],
+      "languages": [
+        "en",
+        "ur"
+      ],
+      "queries_ur": [
+        "ghar par workout",
+        "wazan kam karne ka tarika"
+      ]
+    },
+    {
+      "name": "tech_reviews",
+      "profile": {
+        "creator_niche": "Tech gadgets and smartphone reviews",
+        "recurring_topics": [
+          "Smartphone reviews",
+          "New tech launches",
+          "Budget gadgets",
+          "Phone tips and tricks",
+          "AI tools"
+        ],
+        "target_audience": "Young people deciding what tech to buy"
+      },
+      "queries": [
+        "new phone review",
+        "budget gadgets worth buying",
+        "smartphone tips and tricks",
+        "ai tools you should try",
+        "tech unboxing"
+      ],
+      "languages": [
+        "en",
+        "ur"
+      ],
+      "queries_ur": [
+        "naya mobile review",
+        "mobile ke kamal tips"
+      ]
+    },
+    {
+      "name": "quick_recipes",
+      "profile": {
+        "creator_niche": "Quick and easy home cooking",
+        "recurring_topics": [
+          "Easy dinner recipes",
+          "High protein meals",
+          "Air fryer recipes",
+          "Budget meals",
+          "Healthy snacks"
+        ],
+        "target_audience": "Busy young adults who cook at home"
+      },
+      "queries": [
+        "easy dinner recipe",
+        "high protein meal",
+        "air fryer recipe",
+        "cheap budget meals",
+        "healthy snack ideas"
+      ],
+      "languages": [
+        "en",
+        "ur"
+      ],
+      "queries_ur": [
+        "asaan recipe ghar par",
+        "chicken recipe pakistani"
+      ]
     }
-  ]
+  ],
+  "_note_queries": "'queries' are fixed per niche so every daily run (and its view snapshots) sees the same searches. Changing them starts a new series. motivation: 'daily life hacks' and 'living fully tips' (18 Nov) were replaced on 25 Nov because they pulled off-niche lifehack videos.",
+  "_note_languages": "'languages': ['en', 'ur'] keeps Urdu-script and Roman Urdu Shorts too (never Arabic or Hindi). 'queries_ur' are searched with relevanceLanguage=ur, about 200 quota units each."
 }

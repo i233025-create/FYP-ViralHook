@@ -13,15 +13,19 @@ import os
 import numpy as np
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# Urdu (script + Roman Urdu) niches: all-MiniLM-L6-v2 is English-only, so
+# Urdu titles would get meaningless vectors. This model maps Urdu and English
+# into one space (same 384 dims, same family). Used only when a niche asks for it.
+MULTILINGUAL_EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
-_embedder = None
+_embedders: dict[str, object] = {}
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
-    """all-MiniLM-L6-v2 → (n, 384) L2-normalised matrix. Model loads once (CPU)."""
-    global _embedder
-    if _embedder is None:
+def embed_texts(texts: list[str], model_name: str = EMBEDDING_MODEL) -> np.ndarray:
+    """texts → (n, 384) L2-normalised matrix. Each model loads once (CPU)."""
+    if model_name not in _embedders:
         os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
         from sentence_transformers import SentenceTransformer
-        _embedder = SentenceTransformer(EMBEDDING_MODEL, device="cpu")
-    return np.asarray(_embedder.encode(texts, normalize_embeddings=True, show_progress_bar=False))
+        _embedders[model_name] = SentenceTransformer(model_name, device="cpu")
+    return np.asarray(_embedders[model_name].encode(texts, normalize_embeddings=True,
+                                                    show_progress_bar=False))

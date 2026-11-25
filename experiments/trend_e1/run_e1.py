@@ -69,7 +69,8 @@ def run_one(version: str, niche: dict, now: datetime, top_k: int,
                      "hashtags": niche.get("ig_hashtags", [])}
     started = time.perf_counter()
     result = ra.run_research(profile, niche_text, top_k=top_k, now=now,
-                             source=version, ig_config=ig_config, queries=queries)
+                             source=version, ig_config=ig_config, queries=queries,
+                             languages=niche.get("languages"), queries_ur=niche.get("queries_ur"))
     result["seconds"] = round(time.perf_counter() - started, 1)
     result["niche"] = niche["name"]
     result["version"] = version
@@ -84,6 +85,12 @@ def _tick(ok: bool) -> str:
 
 def _fmt(x, nd=2):
     return "–" if x is None else f"{x:.{nd}f}"
+
+
+def _growth_cell(t: dict) -> str:
+    if t.get("growth_source") == "snapshot":
+        return f"{_fmt(t['measured_growth'])} (measured)"
+    return f"{_fmt(t['relative_growth'])} (estimate)"
 
 
 def summary_markdown(runs: list[dict], date: str) -> str:
@@ -104,6 +111,13 @@ def summary_markdown(runs: list[dict], date: str) -> str:
                 "/".join(str(r["stats"].get("trend_types", {}).get(t, 0)) for t in ra.TYPE_RANK)
                 if r["stats"].get("trend_types") else "–" for r in nr],
             "Niche recent share (sampling baseline)": [_fmt(r["stats"].get("niche_recent_share")) for r in nr],
+            "Posts with measured growth (snapshot files)": [
+                f"{r['stats']['posts_measured']} ({r['stats'].get('snapshot_days', 0)})"
+                if "posts_measured" in r["stats"] else "–" for r in nr],
+            "Niche view acceleration": [_fmt(r["stats"].get("niche_acceleration")) for r in nr],
+            "Posts by title language (en / ur / roman_ur)": [
+                " / ".join(str(r["stats"]["posts_by_language"].get(k, 0)) for k in ("en", "ur", "roman_ur"))
+                if r["stats"].get("posts_by_language") else "–" for r in nr],
             "Shown (top-k) high-confidence trends": [
                 str(sum(1 for t in r["trends"] if t["trend_type"] == "trend")) for r in nr],
             "Mean creator_fit of shown": [
@@ -132,7 +146,7 @@ def summary_markdown(runs: list[dict], date: str) -> str:
             if not r["trends"]:
                 out += ["_No trends._", ""]
                 continue
-            out += ["| # | Topic | Type | O G S R | Creators | Posts | Rel. growth | Outlier | Fit | Top evidence |",
+            out += ["| # | Topic | Type | O G S R | Creators | Posts | Growth (source) | Outlier | Fit | Top evidence |",
                     "|---|---|---|---|---|---|---|---|---|---|"]
             for i, t in enumerate(r["trends"], 1):
                 c = t["checks"]
@@ -140,7 +154,7 @@ def summary_markdown(runs: list[dict], date: str) -> str:
                 ev = t["evidence"][0]
                 topic = t["topic"].replace("|", "/")
                 out.append(f"| {i} | {topic} | {t['trend_type']} | {checks} | {t['channel_count']} | "
-                           f"{t['video_count']} | {_fmt(t['relative_growth'])} | {_fmt(t['median_outlier'])} | "
+                           f"{t['video_count']} | {_growth_cell(t)} | {_fmt(t['median_outlier'])} | "
                            f"{_fmt(t['creator_fit'])} | [{ev['title'][:40].replace('|', '/')}]({ev['url']}) |")
             out.append("")
     return "\n".join(out)
@@ -149,12 +163,12 @@ def summary_markdown(runs: list[dict], date: str) -> str:
 def write_labels(runs: list[dict], path: Path) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["version", "niche", "rank", "topic", "trend_type", "creators", "posts",
-                    "evidence_urls", "label", "notes"])
+        w.writerow(["version", "niche", "rank", "topic", "trend_type", "growth_source", "creators",
+                    "posts", "evidence_urls", "label", "notes"])
         for r in runs:
             for i, t in enumerate(r["trends"], 1):
                 w.writerow([r["version"], r["niche"], i, t["topic"], t["trend_type"],
-                            t["channel_count"], t["video_count"],
+                            t.get("growth_source", ""), t["channel_count"], t["video_count"],
                             " ".join(e["url"] for e in t["evidence"][:3]), "", ""])
 
 
@@ -200,6 +214,8 @@ def main() -> None:
     parser.add_argument("--score", type=Path, default=None, help="labels CSV to score instead of running")
     parser.add_argument("--new-queries", action="store_true",
                         help="ask the LLM for fresh queries instead of reusing today's")
+    parser.add_argument("--queries-from", metavar="YYYY-MM-DD", default=None,
+                        help="reuse the queries of that day's YouTube run (before/after comparisons)")
     args = parser.parse_args()
 
     if args.score:
@@ -218,8 +234,17 @@ def main() -> None:
     runs = []
     for niche in load_niches(args.config, args.niches):
         # both versions share one query set per niche
-        queries = None if args.new_queries else previous_queries(niche["name"], date)
+        # fixed queries from niches.json, unless asked for fresh or another day's
+        if args.new_queries:
+            queries = None
+        elif args.queries_from:
+            queries = previous_queries(niche["name"], args.queries_from)
+        else:
+            queries = niche.get("queries") or previous_queries(niche["name"], date)
         for version in args.versions:
+            if version == "instagram" and not niche.get("ig_creators"):
+                print(f"\n[skip] V2 Instagram — {niche['name']}: no ig_creators in niches.json")
+                continue
             print(f"\n{'=' * 70}\n{VERSION_NAMES[version]} — {niche['name']}\n{'=' * 70}")
             result = run_one(version, niche, now, args.top_k, queries)
             queries = queries or result["queries"]
